@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Vehicles from './pages/Vehicles';
 import Drivers from './pages/Drivers';
+import Maintenance from './pages/Maintenance';
 
 function Dashboard() {
   const { user } = useAuth();
@@ -29,6 +30,12 @@ function Dashboard() {
             className="text-slate-800 font-medium hover:underline block"
           >
             Go to Driver Management →
+          </Link>
+          <Link
+            to="/maintenance"
+            className="text-slate-800 font-medium hover:underline block"
+          >
+            Go to Maintenance Logs →
           </Link>
         </div>
       </div>
@@ -68,6 +75,16 @@ function App() {
             <ProtectedRoute>
               <Layout>
                 <Drivers />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/maintenance"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <Maintenance />
               </Layout>
             </ProtectedRoute>
           }
