@@ -1,8 +1,9 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import Vehicles from './pages/Vehicles';
 
 function Dashboard() {
   const { user, logout } = useAuth();
@@ -13,6 +14,14 @@ function Dashboard() {
           Welcome, {user?.name}
         </h1>
         <p className="text-slate-500 mb-4">Role: {user?.role}</p>
+
+        <Link
+          to="/vehicles"
+          className="text-slate-800 font-medium hover:underline block mb-4"
+        >
+          Go to Vehicle Registry →
+        </Link>
+
         <button
           onClick={logout}
           className="px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition"
@@ -35,6 +44,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/vehicles"
+          element={
+            <ProtectedRoute>
+              <Vehicles />
             </ProtectedRoute>
           }
         />
