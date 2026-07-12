@@ -12,6 +12,7 @@ import TripDetails from './pages/TripDetails';
 import FuelLogs from './pages/FuelLogs';
 import Expenses from './pages/Expenses';
 import Maintenance from './pages/Maintenance';
+import Reports from './pages/Reports';
 import ComingSoon from './pages/ComingSoon';
 import api from './api/axios';
 
@@ -219,7 +220,7 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['FleetManager', 'SafetyOfficer', 'FinancialAnalyst']}>
               <Layout>
-                <ComingSoon />
+                <Reports />
               </Layout>
             </ProtectedRoute>
           }
