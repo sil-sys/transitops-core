@@ -39,6 +39,12 @@ const vehicleSchema = new mongoose.Schema(
       enum: ['Available', 'On Trip', 'In Shop', 'Retired'],
       default: 'Available',
     },
+    fuelLevel: {
+      type: Number,
+      default: 100,
+      min: [0, 'Fuel level cannot be negative'],
+      max: [100, 'Fuel level cannot exceed 100'],
+    },
     region: {
       type: String,
       trim: true,

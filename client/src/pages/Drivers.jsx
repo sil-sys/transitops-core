@@ -20,6 +20,7 @@ function Drivers() {
     licenseExpiryDate: '',
     contactNumber: '',
     safetyScore: 100,
+    experience: 2,
   });
 
   // Depending on requirements, only FleetManager or SafetyOfficer might be allowed to manage drivers
@@ -53,6 +54,7 @@ function Drivers() {
       licenseExpiryDate: '',
       contactNumber: '',
       safetyScore: 100,
+      experience: 2,
     });
     setEditId(null);
     setShowForm(false);
@@ -66,6 +68,7 @@ function Drivers() {
       licenseExpiryDate: driver.licenseExpiryDate ? driver.licenseExpiryDate.split('T')[0] : '',
       contactNumber: driver.contactNumber,
       safetyScore: driver.safetyScore,
+      experience: driver.experience || 2,
     });
     setEditId(driver._id);
     setShowForm(true);
@@ -207,6 +210,18 @@ function Drivers() {
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Experience (Years)</label>
+              <input
+                name="experience"
+                type="number"
+                min="0"
+                placeholder="e.g. 5"
+                value={formData.experience}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+              />
+            </div>
             <button
               type="submit"
               className="col-span-2 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition"
@@ -231,6 +246,7 @@ function Drivers() {
                   <th className="px-4 py-3">Expiry</th>
                   <th className="px-4 py-3">Phone</th>
                   <th className="px-4 py-3">Score</th>
+                  <th className="px-4 py-3">Experience</th>
                   <th className="px-4 py-3">Status</th>
                   {canManage && <th className="px-4 py-3 text-right">Actions</th>}
                 </tr>
@@ -251,6 +267,7 @@ function Drivers() {
                       </td>
                       <td className="px-4 py-3">{d.contactNumber}</td>
                       <td className="px-4 py-3">{d.safetyScore}</td>
+                      <td className="px-4 py-3">{d.experience || 0} yrs</td>
                       <td className="px-4 py-3">
                         {canManage ? (
                           <select
