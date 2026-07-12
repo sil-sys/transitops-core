@@ -16,4 +16,12 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'TransitOps API is running' });
 });
 
+const notFound = require('./middleware/notFound');
+const errorHandler = require('./middleware/errorHandler');
+
+// ... existing routes above ...
+
+app.use(notFound);
+app.use(errorHandler);
+
 module.exports = app;
