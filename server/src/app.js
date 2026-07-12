@@ -1,6 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 
+const authRoutes = require('./routes/authRoutes');
+const notFound = require('./middleware/notFound');
+const errorHandler = require('./middleware/errorHandler');
+
 const app = express();
 
 // Middleware
@@ -16,11 +20,10 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'TransitOps API is running' });
 });
 
-const notFound = require('./middleware/notFound');
-const errorHandler = require('./middleware/errorHandler');
+// Routes
+app.use('/api/auth', authRoutes);
 
-// ... existing routes above ...
-
+// Error handling (must stay last)
 app.use(notFound);
 app.use(errorHandler);
 
