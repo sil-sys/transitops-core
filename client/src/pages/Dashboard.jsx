@@ -10,21 +10,34 @@ export default function Dashboard() {
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  const [filters, setFilters] = useState({
+    type: '',
+    status: '',
+    region: ''
+  });
+
+  const fetchDashboard = async () => {
+    setLoading(true);
+    try {
+      const queryParams = new URLSearchParams(filters).toString();
+      const res = await api.get(`/dashboard?${queryParams}`);
+      setDashboardData(res.data);
+    } catch (err) {
+      console.error('Failed to load dashboard', err);
+      setError('Failed to load dashboard.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchDashboard = async () => {
-      try {
-        const res = await api.get('/dashboard');
-        setDashboardData(res.data);
-      } catch (err) {
-        console.error('Failed to load dashboard', err);
-        setError('Failed to load dashboard.');
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchDashboard();
-  }, []);
+  }, [filters]); // Re-fetch when filters change
+
+  const handleFilterChange = (e) => {
+    setFilters(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  };
 
   if (error) {
     return (
@@ -38,13 +51,38 @@ export default function Dashboard() {
 
   return (
     <div className="p-8 space-y-8 max-w-7xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-800 mb-1">
-          Welcome back, {user?.name}
-        </h1>
-        <p className="text-slate-500">
-          Logged in as <span className="font-semibold text-slate-700">{user?.role}</span>
-        </p>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-800 mb-1">
+            Welcome back, {user?.name}
+          </h1>
+          <p className="text-slate-500">
+            Logged in as <span className="font-semibold text-slate-700">{user?.role}</span>
+          </p>
+        </div>
+        
+        {/* Dashboard Filters */}
+        <div className="flex flex-wrap gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+          <select name="type" value={filters.type} onChange={handleFilterChange} className="px-3 py-1.5 text-sm border-none bg-slate-50 rounded-lg text-slate-600 focus:ring-0 outline-none">
+            <option value="">All Types</option>
+            <option value="Truck">Truck</option>
+            <option value="Van">Van</option>
+            <option value="Bus">Bus</option>
+          </select>
+          <select name="status" value={filters.status} onChange={handleFilterChange} className="px-3 py-1.5 text-sm border-none bg-slate-50 rounded-lg text-slate-600 focus:ring-0 outline-none">
+            <option value="">All Statuses</option>
+            <option value="Available">Available</option>
+            <option value="On Trip">On Trip</option>
+            <option value="In Shop">In Shop</option>
+          </select>
+          <select name="region" value={filters.region} onChange={handleFilterChange} className="px-3 py-1.5 text-sm border-none bg-slate-50 rounded-lg text-slate-600 focus:ring-0 outline-none">
+            <option value="">All Regions</option>
+            <option value="North">North</option>
+            <option value="South">South</option>
+            <option value="East">East</option>
+            <option value="West">West</option>
+          </select>
+        </div>
       </div>
 
       {/* KPI Cards */}
