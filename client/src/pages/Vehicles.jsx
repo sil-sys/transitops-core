@@ -81,7 +81,7 @@ function Vehicles() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8">
+    <div className="p-8">
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-semibold text-slate-800">Vehicle Registry</h1>

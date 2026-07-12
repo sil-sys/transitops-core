@@ -1,33 +1,36 @@
 import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import Layout from './components/Layout';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Vehicles from './pages/Vehicles';
+import Drivers from './pages/Drivers';
 
 function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   return (
-    <div className="min-h-screen bg-slate-50 p-8">
+    <div className="p-8">
       <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-6">
         <h1 className="text-2xl font-semibold text-slate-800 mb-1">
           Welcome, {user?.name}
         </h1>
         <p className="text-slate-500 mb-4">Role: {user?.role}</p>
 
-        <Link
-          to="/vehicles"
-          className="text-slate-800 font-medium hover:underline block mb-4"
-        >
-          Go to Vehicle Registry →
-        </Link>
-
-        <button
-          onClick={logout}
-          className="px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition"
-        >
-          Logout
-        </button>
+        <div className="space-y-2">
+          <Link
+            to="/vehicles"
+            className="text-slate-800 font-medium hover:underline block"
+          >
+            Go to Vehicle Registry →
+          </Link>
+          <Link
+            to="/drivers"
+            className="text-slate-800 font-medium hover:underline block"
+          >
+            Go to Driver Management →
+          </Link>
+        </div>
       </div>
     </div>
   );
@@ -43,7 +46,9 @@ function App() {
           path="/"
           element={
             <ProtectedRoute>
-              <Dashboard />
+              <Layout>
+                <Dashboard />
+              </Layout>
             </ProtectedRoute>
           }
         />
@@ -51,7 +56,19 @@ function App() {
           path="/vehicles"
           element={
             <ProtectedRoute>
-              <Vehicles />
+              <Layout>
+                <Vehicles />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/drivers"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <Drivers />
+              </Layout>
             </ProtectedRoute>
           }
         />
