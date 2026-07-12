@@ -130,6 +130,19 @@ const createTrip = async (req, res, next) => {
       }
     }
 
+    // BUSINESS RULE: Drivers with expired licenses or Suspended status cannot be assigned
+    if (req.body.driver) {
+      const driverDoc = await Driver.findById(req.body.driver);
+      if (driverDoc) {
+        if (driverDoc.status === 'Suspended') {
+          return next(new ApiError(400, 'Cannot assign a suspended driver to a trip.'));
+        }
+        if (driverDoc.licenseExpiryDate && new Date(driverDoc.licenseExpiryDate) < new Date()) {
+          return next(new ApiError(400, 'Cannot assign a driver with an expired license.'));
+        }
+      }
+    }
+
     const tripData = {
       ...req.body,
       status: 'Draft',
@@ -177,6 +190,22 @@ const updateTrip = async (req, res, next) => {
       const vehicleDoc = await Vehicle.findById(vehicleIdForValidation);
       if (vehicleDoc && cargoWeightForValidation > vehicleDoc.maxLoadCapacity) {
         return next(new ApiError(400, `Cargo weight (${cargoWeightForValidation} kg) exceeds the selected vehicle's maximum load capacity (${vehicleDoc.maxLoadCapacity} kg).`));
+      }
+    }
+
+    // BUSINESS RULE: Drivers with expired licenses or Suspended status cannot be assigned
+    const targetDriverId = req.body.driver || (trip.driver ? trip.driver.toString() : null);
+    const isTerminating = incomingStatus === 'Completed' || incomingStatus === 'Cancelled';
+    
+    if (targetDriverId && !isTerminating) {
+      const driverDoc = await Driver.findById(targetDriverId);
+      if (driverDoc) {
+        if (driverDoc.status === 'Suspended') {
+          return next(new ApiError(400, 'Cannot assign or dispatch a suspended driver.'));
+        }
+        if (driverDoc.licenseExpiryDate && new Date(driverDoc.licenseExpiryDate) < new Date()) {
+          return next(new ApiError(400, 'Cannot assign or dispatch a driver with an expired license.'));
+        }
       }
     }
 
