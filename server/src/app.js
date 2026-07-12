@@ -9,6 +9,7 @@ const driverRoutes = require('./routes/driverRoutes');
 const tripRoutes = require('./routes/tripRoutes');
 const fuelRoutes = require('./routes/fuelRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
+const maintenanceRoutes = require('./routes/maintenanceRoutes');
 const app = express();
 
 const allowedOrigins = [process.env.CLIENT_URL, 'http://localhost:5173', 'http://localhost:5174'];
@@ -40,6 +41,7 @@ app.use('/api/drivers', driverRoutes);
 app.use('/api/trips', tripRoutes);
 app.use('/api/fuel', fuelRoutes);
 app.use('/api/expenses', expenseRoutes);
+app.use('/api/maintenance', maintenanceRoutes);
 
 // Error handling (must stay last)
 app.use(notFound);

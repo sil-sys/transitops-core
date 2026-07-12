@@ -11,6 +11,7 @@ import Trips from './pages/Trips';
 import TripDetails from './pages/TripDetails';
 import FuelLogs from './pages/FuelLogs';
 import Expenses from './pages/Expenses';
+import Maintenance from './pages/Maintenance';
 import ComingSoon from './pages/ComingSoon';
 import api from './api/axios';
 
@@ -188,7 +189,7 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['FleetManager']}>
               <Layout>
-                <ComingSoon />
+                <Maintenance />
               </Layout>
             </ProtectedRoute>
           }
