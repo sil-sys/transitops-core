@@ -4,7 +4,7 @@ const cors = require('cors');
 const authRoutes = require('./routes/authRoutes');
 const notFound = require('./middleware/notFound');
 const errorHandler = require('./middleware/errorHandler');
-
+const vehicleRoutes = require('./routes/vehicleRoutes');
 const app = express();
 
 // Middleware
@@ -22,6 +22,7 @@ app.get('/api/health', (req, res) => {
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/vehicles', vehicleRoutes);
 
 // Error handling (must stay last)
 app.use(notFound);
