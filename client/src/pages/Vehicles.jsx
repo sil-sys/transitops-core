@@ -18,6 +18,7 @@ function Vehicles() {
     acquisitionCost: '',
     region: '',
   });
+  const [searchTerm, setSearchTerm] = useState('');
 
   const canManage = user?.role === 'FleetManager';
 
@@ -85,14 +86,23 @@ function Vehicles() {
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-semibold text-slate-800">Vehicle Registry</h1>
-          {canManage && (
-            <button
-              onClick={() => setShowForm(!showForm)}
-              className="px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition"
-            >
-              {showForm ? 'Cancel' : '+ Add Vehicle'}
-            </button>
-          )}
+          <div className="flex gap-3">
+            <input
+              type="text"
+              placeholder="Search Name or Reg..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="px-4 py-2 border border-slate-200 rounded-lg text-sm min-w-[200px]"
+            />
+            {canManage && (
+              <button
+                onClick={() => setShowForm(!showForm)}
+                className="px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition"
+              >
+                {showForm ? 'Cancel' : '+ Add Vehicle'}
+              </button>
+            )}
+          </div>
         </div>
 
         {error && (
@@ -182,7 +192,12 @@ function Vehicles() {
                 </tr>
               </thead>
               <tbody>
-                {vehicles.map((v) => (
+                {vehicles
+                  .filter(v => 
+                    v.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                    v.registrationNumber.toLowerCase().includes(searchTerm.toLowerCase())
+                  )
+                  .map((v) => (
                   <tr key={v._id} className="border-t border-slate-100">
                     <td className="px-4 py-3 font-medium text-slate-800">{v.registrationNumber}</td>
                     <td className="px-4 py-3">{v.name}</td>

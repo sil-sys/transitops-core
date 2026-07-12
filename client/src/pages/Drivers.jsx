@@ -12,6 +12,7 @@ function Drivers() {
   
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
   
   const [formData, setFormData] = useState({
     name: '',
@@ -115,20 +116,29 @@ function Drivers() {
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-semibold text-slate-800">Driver Management</h1>
-          {canManage && (
-            <button
-              onClick={() => {
-                if (showForm) {
-                  resetForm();
-                } else {
-                  setShowForm(true);
-                }
-              }}
-              className="px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition"
-            >
-              {showForm ? 'Cancel' : '+ Add Driver'}
-            </button>
-          )}
+          <div className="flex gap-3">
+            <input
+              type="text"
+              placeholder="Search Name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="px-4 py-2 border border-slate-200 rounded-lg text-sm min-w-[200px]"
+            />
+            {canManage && (
+              <button
+                onClick={() => {
+                  if (showForm) {
+                    resetForm();
+                  } else {
+                    setShowForm(true);
+                  }
+                }}
+                className="px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition"
+              >
+                {showForm ? 'Cancel' : '+ Add Driver'}
+              </button>
+            )}
+          </div>
         </div>
 
         {error && (
@@ -252,7 +262,9 @@ function Drivers() {
                 </tr>
               </thead>
               <tbody>
-                {drivers.map((d) => {
+                {drivers
+                  .filter(d => d.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                  .map((d) => {
                   // Check if expired
                   const isExpired = new Date(d.licenseExpiryDate) < new Date();
                   
