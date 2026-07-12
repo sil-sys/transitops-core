@@ -3,15 +3,26 @@ import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 
-const WORKFLOW_STATES = [
+const PREP_STAGES = [
   'Draft',
   'Vehicle Assigned',
   'Driver Assigned',
   'Route Planned',
-  'Ready for Approval',
-  'Approved',
-  'Ready for Dispatch'
+  'Ready for Dispatch',
 ];
+
+const TERMINAL_STAGES = ['Dispatched', 'Completed', 'Cancelled'];
+
+const STATUS_COLORS = {
+  'Draft': 'bg-slate-100 text-slate-700 border-slate-300',
+  'Vehicle Assigned': 'bg-blue-50 text-blue-700 border-blue-200',
+  'Driver Assigned': 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  'Route Planned': 'bg-purple-50 text-purple-700 border-purple-200',
+  'Ready for Dispatch': 'bg-teal-50 text-teal-700 border-teal-200',
+  'Dispatched': 'bg-blue-100 text-blue-800 border-blue-300',
+  'Completed': 'bg-green-100 text-green-800 border-green-300',
+  'Cancelled': 'bg-rose-100 text-rose-800 border-rose-300',
+};
 
 export default function TripDetails() {
   const { id } = useParams();
@@ -25,973 +36,863 @@ export default function TripDetails() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [confirmAction, setConfirmAction] = useState(null); // {label, status, color}
 
-  // Form states matching details schema
+  // Form state
   const [selectedDriver, setSelectedDriver] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState('');
   const [priority, setPriority] = useState('Medium');
-  
   const [routeForm, setRouteForm] = useState({
-    source: '',
-    destination: '',
-    stopsInput: '',
-    stops: [],
-    estimatedDistance: 0,
-    estimatedDuration: 0,
+    source: '', destination: '', stopsInput: '', stops: [],
+    estimatedDistance: 0, estimatedDuration: 0,
   });
-
   const [cargoForm, setCargoForm] = useState({
-    cargoType: '',
-    cargoWeight: 0,
-    volume: 0,
-    packages: 0,
-    specialInstructions: '',
+    cargoType: '', cargoWeight: 0, volume: 0,
+    packages: 0, specialInstructions: '',
   });
-
   const [checklist, setChecklist] = useState({
-    driverAssigned: false,
-    vehicleAssigned: false,
-    documentsUploaded: false,
-    routePlanned: false,
-    fuelPlanned: false,
-    cargoVerified: false,
-    safetyInspection: false,
+    driverAssigned: false, vehicleAssigned: false, documentsUploaded: false,
+    routePlanned: false, fuelPlanned: false, cargoVerified: false, safetyInspection: false,
   });
-
   const [documents, setDocuments] = useState([]);
   const [docForm, setDocForm] = useState({ name: '', type: 'Driver License' });
 
   const isFleetManager = user?.role === 'FleetManager';
   const isSafetyOfficer = user?.role === 'SafetyOfficer';
-  const isDriver = user?.role === 'Driver';
+  const isReadOnly = !isFleetManager || TERMINAL_STAGES.includes(trip?.status);
 
-  // Fetch initial details
-  const loadInitialData = async () => {
+  const FUEL_RATE = 0.15; // L/km
+  const FUEL_PRICE = 1.25; // $/L
+  const estFuelLiters = Math.round(routeForm.estimatedDistance * FUEL_RATE * 10) / 10;
+  const estFuelCost = Math.round(estFuelLiters * FUEL_PRICE * 100) / 100;
+
+  const loadData = async () => {
     setLoading(true);
     setError('');
     try {
-      const tripRes = await api.get(`/trips/${id}`);
+      const [tripRes, driversRes, vehiclesRes] = await Promise.all([
+        api.get(`/trips/${id}`),
+        api.get('/drivers'),
+        api.get('/vehicles'),
+      ]);
       const t = tripRes.data.data;
       setTrip(t);
-      
+      setDrivers(driversRes.data.data);
+      setVehicles(vehiclesRes.data.data);
       setSelectedDriver(t.driver?._id || '');
       setSelectedVehicle(t.vehicle?._id || '');
       setPriority(t.priority || 'Medium');
-      
       setRouteForm({
-        source: t.source || '',
-        destination: t.destination || '',
-        stopsInput: '',
-        stops: t.stops || [],
+        source: t.source || '', destination: t.destination || '',
+        stopsInput: '', stops: t.stops || [],
         estimatedDistance: t.estimatedDistance || 0,
         estimatedDuration: t.estimatedDuration || 0,
       });
-
       setCargoForm({
-        cargoType: t.cargoType || '',
-        cargoWeight: t.cargoWeight || 0,
-        volume: t.volume || 0,
-        packages: t.packages || 0,
+        cargoType: t.cargoType || '', cargoWeight: t.cargoWeight || 0,
+        volume: t.volume || 0, packages: t.packages || 0,
         specialInstructions: t.specialInstructions || '',
       });
-
       setChecklist(t.checklist || {
-        driverAssigned: false,
-        vehicleAssigned: false,
-        documentsUploaded: false,
-        routePlanned: false,
-        fuelPlanned: false,
-        cargoVerified: false,
-        safetyInspection: false,
+        driverAssigned: false, vehicleAssigned: false, documentsUploaded: false,
+        routePlanned: false, fuelPlanned: false, cargoVerified: false, safetyInspection: false,
       });
-
       setDocuments(t.documents || []);
-
-      const driversRes = await api.get('/drivers');
-      setDrivers(driversRes.data.data);
-
-      const vehiclesRes = await api.get('/vehicles');
-      setVehicles(vehiclesRes.data.data);
-
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to load trip information.');
+      setError(err.response?.data?.message || 'Failed to load trip.');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadInitialData();
-  }, [id]);
+  useEffect(() => { loadData(); }, [id]);
 
-  // Handle Checklist Calculations
-  const getChecklistPercentage = () => {
-    const total = Object.keys(checklist).length;
-    const completed = Object.values(checklist).filter(Boolean).length;
-    return Math.round((completed / total) * 100);
-  };
-
-  // Auto-fill checklist fields based on form status
+  // Auto-sync checklist with form state
   useEffect(() => {
     if (!trip) return;
     setChecklist(prev => ({
       ...prev,
       driverAssigned: !!selectedDriver,
       vehicleAssigned: !!selectedVehicle,
-      routePlanned: routeForm.source && routeForm.destination && routeForm.estimatedDistance > 0,
+      routePlanned: !!(routeForm.source && routeForm.destination && routeForm.estimatedDistance > 0),
       fuelPlanned: routeForm.estimatedDistance > 0,
       documentsUploaded: documents.length > 0,
     }));
-  }, [selectedDriver, selectedVehicle, routeForm.estimatedDistance, routeForm.source, routeForm.destination, documents]);
+  }, [selectedDriver, selectedVehicle, routeForm.source, routeForm.destination, routeForm.estimatedDistance, documents]);
 
-  // Fuel Calculations
-  const ESTIMATED_CONSUMPTION_RATE = 0.15; // liters per km
-  const ESTIMATED_FUEL_PRICE = 1.25;      // USD per liter
-  const estFuelLiters = Math.round(routeForm.estimatedDistance * ESTIMATED_CONSUMPTION_RATE * 10) / 10;
-  const estFuelCost = Math.round(estFuelLiters * ESTIMATED_FUEL_PRICE * 100) / 100;
+  const checklistPct = () => {
+    const vals = Object.values(checklist);
+    return Math.round((vals.filter(Boolean).length / vals.length) * 100);
+  };
 
-  // Add Stop
+  const showToast = (msg, isErr = false) => {
+    if (isErr) { setError(msg); setTimeout(() => setError(''), 5000); }
+    else { setSuccess(msg); setTimeout(() => setSuccess(''), 4000); }
+  };
+
+  const buildPayload = (overrideStatus = null) => ({
+    driver: selectedDriver || null,
+    vehicle: selectedVehicle || null,
+    priority,
+    stops: routeForm.stops,
+    estimatedDistance: routeForm.estimatedDistance,
+    estimatedDuration: routeForm.estimatedDuration,
+    cargoType: cargoForm.cargoType,
+    cargoWeight: cargoForm.cargoWeight,
+    volume: cargoForm.volume,
+    packages: cargoForm.packages,
+    specialInstructions: cargoForm.specialInstructions,
+    checklist,
+    documents,
+    ...(overrideStatus ? { status: overrideStatus } : {}),
+  });
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const autoStatus = () => {
+        const s = trip.status;
+        if (TERMINAL_STAGES.includes(s)) return s;
+        if (!selectedVehicle) return 'Draft';
+        if (!selectedDriver) return 'Vehicle Assigned';
+        const routed = routeForm.source && routeForm.destination && routeForm.estimatedDistance > 0;
+        if (!routed) return 'Driver Assigned';
+        return 'Route Planned';
+      };
+      const res = await api.put(`/trips/${id}`, buildPayload(autoStatus()));
+      setTrip(res.data.data);
+      showToast('Changes saved!');
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Save failed.', true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTransition = async (nextStatus) => {
+    // Validate before critical approval transitions
+    if (['Ready for Dispatch', 'Dispatched'].includes(nextStatus)) {
+      if (!selectedDriver) return showToast('A driver must be assigned first.', true);
+      if (!selectedVehicle) return showToast('A vehicle must be assigned first.', true);
+      if (!routeForm.source || !routeForm.destination || routeForm.estimatedDistance <= 0) {
+        return showToast('Route details (source, destination, distance) must be complete.', true);
+      }
+      if (nextStatus === 'Dispatched' && checklistPct() < 100) {
+        return showToast('All checklist items must be verified before dispatching.', true);
+      }
+    }
+    setSaving(true);
+    try {
+      const res = await api.put(`/trips/${id}`, buildPayload(nextStatus));
+      setTrip(res.data.data);
+      showToast(`Status updated to: ${nextStatus}`);
+      setConfirmAction(null);
+      // Reload to reflect live vehicle/driver status changes
+      await loadData();
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Transition failed.', true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleAddStop = () => {
     if (!routeForm.stopsInput.trim()) return;
-    setRouteForm(prev => ({
-      ...prev,
-      stops: [...prev.stops, prev.stopsInput.trim()],
-      stopsInput: '',
-    }));
+    setRouteForm(p => ({ ...p, stops: [...p.stops, p.stopsInput.trim()], stopsInput: '' }));
   };
 
-  // Remove Stop
-  const handleRemoveStop = (index) => {
-    setRouteForm(prev => ({
-      ...prev,
-      stops: prev.stops.filter((_, idx) => idx !== index),
-    }));
-  };
-
-  // Mock document upload
   const handleAddDocument = (e) => {
     e.preventDefault();
     if (!docForm.name.trim()) return;
-    const newDoc = {
-      name: docForm.name.trim(),
-      type: docForm.type,
-      url: `/uploads/${Date.now()}-${docForm.name.trim()}`,
-      uploadedAt: new Date(),
-    };
-    setDocuments(prev => [...prev, newDoc]);
+    setDocuments(p => [...p, { name: docForm.name.trim(), type: docForm.type, url: `/uploads/${Date.now()}`, uploadedAt: new Date() }]);
     setDocForm({ name: '', type: 'Driver License' });
-    setSuccess('Document added locally. Make sure to click Save Changes.');
-    setTimeout(() => setSuccess(''), 3000);
   };
 
-  const handleRemoveDocument = (index) => {
-    setDocuments(prev => prev.filter((_, idx) => idx !== index));
-  };
+  const getDriverById = (dId) => drivers.find(d => d._id === dId);
+  const getVehicleById = (vId) => vehicles.find(v => v._id === vId);
+  const isExpiredLicense = (d) => d?.licenseExpiryDate && new Date(d.licenseExpiryDate) < new Date();
 
-  // Save changes API handler
-  const handleSave = async (updatedStatus = null) => {
-    setError('');
-    setSuccess('');
-    setSaving(true);
-    try {
-      const statusToSave = updatedStatus || determineWorkflowStatus();
-
-      const payload = {
-        driver: selectedDriver || null,
-        vehicle: selectedVehicle || null,
-        priority,
-        stops: routeForm.stops,
-        estimatedDistance: routeForm.estimatedDistance,
-        estimatedDuration: routeForm.estimatedDuration,
-        cargoType: cargoForm.cargoType,
-        cargoWeight: cargoForm.cargoWeight,
-        volume: cargoForm.volume,
-        packages: cargoForm.packages,
-        specialInstructions: cargoForm.specialInstructions,
-        checklist,
-        documents,
-        status: statusToSave,
-      };
-
-      const res = await api.put(`/trips/${id}`, payload);
-      setTrip(res.data.data);
-      setSuccess('Trip progress saved successfully!');
-      setTimeout(() => setSuccess(''), 4000);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save changes.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Auto determine workflow status based on filled details
-  const determineWorkflowStatus = () => {
-    if (trip.status === 'Approved' || trip.status === 'Ready for Dispatch' || trip.status === 'Dispatched' || trip.status === 'Completed' || trip.status === 'Cancelled') {
-      return trip.status;
-    }
-    if (trip.status === 'Ready for Approval') {
-      return 'Ready for Approval';
-    }
-
-    if (!selectedVehicle) return 'Draft';
-    if (!selectedDriver) return 'Vehicle Assigned';
-    
-    const isRoutePlanned = routeForm.source && routeForm.destination && routeForm.estimatedDistance > 0;
-    if (!isRoutePlanned) return 'Driver Assigned';
-
-    return 'Route Planned';
-  };
-
-  // Approval Handlers
-  const handleWorkflowTransition = async (nextState) => {
-    // Validate first
-    if (nextState === 'Ready for Approval' || nextState === 'Approved') {
-      if (!selectedDriver) {
-        setError('Validation Error: A driver must be assigned before submitting for approval.');
-        return;
-      }
-      if (!selectedVehicle) {
-        setError('Validation Error: A vehicle must be assigned before submitting for approval.');
-        return;
-      }
-      if (!routeForm.source || !routeForm.destination || routeForm.estimatedDistance <= 0) {
-        setError('Validation Error: Route details must be completed before submitting for approval.');
-        return;
-      }
-      if (getChecklistPercentage() < 100) {
-        setError('Validation Error: All checklist items must be verified before approval.');
-        return;
-      }
-    }
-
-    setError('');
-    setSaving(true);
-    try {
-      const payload = {
-        driver: selectedDriver || null,
-        vehicle: selectedVehicle || null,
-        priority,
-        stops: routeForm.stops,
-        estimatedDistance: routeForm.estimatedDistance,
-        estimatedDuration: routeForm.estimatedDuration,
-        cargoType: cargoForm.cargoType,
-        cargoWeight: cargoForm.cargoWeight,
-        volume: cargoForm.volume,
-        packages: cargoForm.packages,
-        specialInstructions: cargoForm.specialInstructions,
-        checklist,
-        documents,
-        status: nextState,
-      };
-
-      const res = await api.put(`/trips/${id}`, payload);
-      setTrip(res.data.data);
-      setSuccess(`Trip status updated to: ${nextState}!`);
-      setTimeout(() => setSuccess(''), 4000);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Workflow transition failed.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const getSelectedDriverDetails = () => {
-    return drivers.find(d => d._id === selectedDriver);
-  };
-
-  const getSelectedVehicleDetails = () => {
-    return vehicles.find(v => v._id === selectedVehicle);
-  };
-
-  const isDriverLicenseExpired = (driver) => {
-    if (!driver?.licenseExpiryDate) return false;
-    return new Date(driver.licenseExpiryDate) < new Date();
-  };
-
-  if (loading) {
-    return (
-      <div className="p-12 text-center text-slate-500 flex flex-col items-center gap-3">
-        <div className="w-10 h-10 border-4 border-slate-800 border-t-transparent rounded-full animate-spin"></div>
-        <span className="font-medium">Loading trip preparation dashboard...</span>
+  if (loading) return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-12 h-12 border-4 border-slate-800 border-t-transparent rounded-full animate-spin" />
+        <span className="text-slate-600 font-medium text-sm">Loading trip details...</span>
       </div>
-    );
-  }
-
-  if (error && !trip) {
-    return (
-      <div className="p-8">
-        <div className="max-w-2xl mx-auto bg-rose-50 border border-rose-200 text-rose-700 p-6 rounded-2xl text-center">
-          <h2 className="text-lg font-bold mb-2">Error Loading Trip</h2>
-          <p className="text-sm mb-4">{error}</p>
-          <button onClick={() => navigate('/trips')} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-semibold">
-            Return to Trips
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const currentStepIndex = WORKFLOW_STATES.indexOf(
-    WORKFLOW_STATES.includes(trip.status) ? trip.status : 'Draft'
+    </div>
   );
 
+  if (!trip) return (
+    <div className="p-8">
+      <div className="max-w-2xl mx-auto bg-rose-50 border border-rose-200 rounded-2xl p-8 text-center">
+        <h2 className="text-lg font-bold text-rose-800 mb-2">Trip Not Found</h2>
+        <p className="text-sm text-rose-600 mb-4">{error}</p>
+        <button onClick={() => navigate('/trips')} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-semibold">Back to Trips</button>
+      </div>
+    </div>
+  );
+
+  const isDispatched = trip.status === 'Dispatched';
+  const isCompleted = trip.status === 'Completed';
+  const isCancelled = trip.status === 'Cancelled';
+  const isTerminal = isCompleted || isCancelled;
+  const prepStepIndex = PREP_STAGES.includes(trip.status) ? PREP_STAGES.indexOf(trip.status) : (TERMINAL_STAGES.includes(trip.status) ? PREP_STAGES.length : 0);
+  const selectedDriverObj = getDriverById(selectedDriver);
+  const selectedVehicleObj = getVehicleById(selectedVehicle);
+
   return (
-    <div className="p-8 bg-slate-50 min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        
-        {/* Banner Toast Alerts */}
-        {success && (
-          <div className="fixed top-4 right-4 z-50 bg-emerald-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 border border-emerald-500 animate-in fade-in slide-in-from-top-4 duration-200">
-            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="text-sm font-semibold">{success}</span>
-          </div>
-        )}
-
-        {error && (
-          <div className="fixed top-4 right-4 z-50 bg-rose-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 border border-rose-500 animate-in fade-in slide-in-from-top-4 duration-200">
-            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <span className="text-sm font-semibold">{error}</span>
-          </div>
-        )}
-
-        <div className="mb-6 flex items-center justify-between">
-          <button
-            onClick={() => navigate(user?.role === 'Driver' ? '/my-trips' : '/trips')}
-            className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700 transition font-medium"
-          >
-            &larr; Back to Trips List
-          </button>
-          <span className="text-xs text-slate-400">Trip ID: {trip._id}</span>
+    <div className="bg-slate-50 min-h-screen">
+      {/* Toast: Success */}
+      {success && (
+        <div className="fixed top-4 right-4 z-50 bg-emerald-700 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-emerald-600">
+          <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          <span className="text-sm font-semibold">{success}</span>
         </div>
+      )}
+      {/* Toast: Error */}
+      {error && (
+        <div className="fixed top-4 right-4 z-50 bg-rose-700 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-rose-600 max-w-md">
+          <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          <span className="text-sm font-semibold">{error}</span>
+        </div>
+      )}
 
-        {/* Stepper Status Progress */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 mb-8 shadow-sm">
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Trip Preparation Stage</h3>
-          <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
-            {WORKFLOW_STATES.map((state, idx) => {
-              const isCompleted = idx < currentStepIndex;
-              const isCurrent = idx === currentStepIndex;
-              return (
-                <div key={state} className="flex-1 w-full flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all border ${
-                      isCompleted ? 'bg-slate-800 text-white border-slate-800' :
-                      isCurrent ? 'bg-slate-50 text-slate-800 border-slate-800 ring-2 ring-slate-800/20 font-bold' :
-                      'bg-slate-50 text-slate-400 border-slate-200'
-                    }`}>
-                      {isCompleted ? '✓' : idx + 1}
-                    </div>
-                    <span className={`text-xs font-semibold whitespace-nowrap ${isCurrent ? 'text-slate-900 font-bold' : isCompleted ? 'text-slate-700' : 'text-slate-400'}`}>
-                      {state}
-                    </span>
-                  </div>
-                  {idx < WORKFLOW_STATES.length - 1 && (
-                    <div className={`hidden lg:block flex-1 h-[2px] mx-2 ${idx < currentStepIndex ? 'bg-slate-800' : 'bg-slate-100'}`} />
-                  )}
-                </div>
-              );
-            })}
+      {/* Confirm Modal */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-sm p-6 text-center">
+            <div className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 ${confirmAction.iconBg}`}>
+              {confirmAction.icon}
+            </div>
+            <h3 className="text-lg font-bold text-slate-800 mb-2">{confirmAction.label}</h3>
+            <p className="text-sm text-slate-500 mb-6">{confirmAction.message}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmAction(null)} className="flex-1 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50">
+                Cancel
+              </button>
+              <button
+                disabled={saving}
+                onClick={() => handleTransition(confirmAction.nextStatus)}
+                className={`flex-1 py-2 text-white rounded-lg text-sm font-semibold shadow-md transition ${confirmAction.btnClass}`}
+              >
+                {saving ? 'Processing...' : 'Confirm'}
+              </button>
+            </div>
           </div>
         </div>
+      )}
 
-        {/* Outer Grid: 2 Columns */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* Main Sections */}
-          <div className="lg:col-span-2 space-y-8">
-            
-            {/* SECTION 1: Basic Information */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">1. Basic Information</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
-                <div>
-                  <span className="text-xs text-slate-400 block uppercase font-semibold">Source location</span>
-                  <span className="font-semibold text-slate-800 block mt-0.5">{trip.source}</span>
-                </div>
-                <div>
-                  <span className="text-xs text-slate-400 block uppercase font-semibold">Destination</span>
-                  <span className="font-semibold text-slate-800 block mt-0.5">{trip.destination}</span>
-                </div>
-                <div>
-                  <span className="text-xs text-slate-400 block uppercase font-semibold">Priority</span>
-                  {isFleetManager ? (
-                    <select
-                      value={priority}
-                      onChange={(e) => setPriority(e.target.value)}
-                      className="mt-1 px-2.5 py-1 border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-slate-800/20"
-                    >
-                      <option value="Low">Low</option>
-                      <option value="Medium">Medium</option>
-                      <option value="High">High</option>
-                    </select>
-                  ) : (
-                    <span className="font-semibold text-slate-800 block mt-0.5">{priority}</span>
-                  )}
-                </div>
-                <div>
-                  <span className="text-xs text-slate-400 block uppercase font-semibold">Workflow Status</span>
-                  <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-300">
-                    {trip.status}
-                  </span>
-                </div>
+      <div className="max-w-7xl mx-auto p-6 space-y-6">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <button onClick={() => navigate('/trips')} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 font-medium mb-3 transition">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
+              Back to Trips
+            </button>
+            <h1 className="text-2xl font-bold text-slate-900">
+              {trip.source} <span className="text-slate-400 font-normal">→</span> {trip.destination}
+            </h1>
+            <div className="flex items-center gap-3 mt-2 flex-wrap">
+              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${STATUS_COLORS[trip.status]}`}>
+                {trip.status}
+              </span>
+              <span className="text-xs text-slate-400">ID: {trip._id.slice(-8).toUpperCase()}</span>
+              <span className="text-xs text-slate-400">Created: {new Date(trip.createdAt).toLocaleDateString()}</span>
+            </div>
+          </div>
+
+          {/* Active Status Banner for dispatched/completed/cancelled */}
+          {isDispatched && (
+            <div className="bg-blue-600 text-white px-5 py-3 rounded-xl flex items-center gap-3 shadow-lg">
+              <span className="w-2 h-2 rounded-full bg-white animate-pulse inline-block"></span>
+              <div>
+                <p className="font-bold text-sm">Trip is Active</p>
+                <p className="text-xs text-blue-200">Dispatched {trip.dispatchedAt ? new Date(trip.dispatchedAt).toLocaleString() : ''}</p>
               </div>
             </div>
+          )}
+          {isCompleted && (
+            <div className="bg-emerald-600 text-white px-5 py-3 rounded-xl flex items-center gap-3 shadow-lg">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+              <div>
+                <p className="font-bold text-sm">Trip Completed</p>
+                <p className="text-xs text-emerald-200">{trip.completedAt ? new Date(trip.completedAt).toLocaleString() : ''}</p>
+              </div>
+            </div>
+          )}
+          {isCancelled && (
+            <div className="bg-rose-600 text-white px-5 py-3 rounded-xl flex items-center gap-3 shadow-lg">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              <div>
+                <p className="font-bold text-sm">Trip Cancelled</p>
+                <p className="text-xs text-rose-200">{trip.completedAt ? new Date(trip.completedAt).toLocaleString() : ''}</p>
+              </div>
+            </div>
+          )}
+        </div>
 
-            {/* SECTION 2: Driver Assignment */}
+        {/* Preparation Stepper - only shown for prep stages */}
+        {!TERMINAL_STAGES.includes(trip.status) && (
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm overflow-x-auto">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-4">Preparation Progress</p>
+            <div className="flex items-center min-w-max gap-0">
+              {PREP_STAGES.map((stage, idx) => {
+                const done = idx < prepStepIndex;
+                const current = idx === prepStepIndex;
+                return (
+                  <React.Fragment key={stage}>
+                    <div className="flex flex-col items-center gap-1.5">
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold border-2 transition-all ${
+                        done ? 'bg-slate-800 border-slate-800 text-white' :
+                        current ? 'bg-white border-slate-800 text-slate-800 ring-2 ring-slate-800/20' :
+                        'bg-slate-50 border-slate-200 text-slate-400'
+                      }`}>
+                        {done ? '✓' : idx + 1}
+                      </div>
+                      <span className={`text-[10px] font-semibold text-center whitespace-nowrap max-w-[70px] leading-tight ${current ? 'text-slate-900' : done ? 'text-slate-600' : 'text-slate-400'}`}>
+                        {stage}
+                      </span>
+                    </div>
+                    {idx < PREP_STAGES.length - 1 && (
+                      <div className={`h-0.5 flex-1 min-w-8 mx-1 mb-4 ${done ? 'bg-slate-800' : 'bg-slate-200'}`} />
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Integration Status Banner (shows live driver/vehicle assignment state) */}
+        {(trip.driver || trip.vehicle) && (
+          <div className={`rounded-2xl p-4 border flex items-start gap-4 flex-wrap ${
+            isDispatched ? 'bg-blue-50 border-blue-200' :
+            isCompleted ? 'bg-emerald-50 border-emerald-200' :
+            isCancelled ? 'bg-rose-50 border-rose-200' :
+            'bg-slate-50 border-slate-200'
+          }`}>
+            <div className="text-xs font-bold uppercase tracking-widest text-slate-500 w-full mb-1">
+              🔗 Active Integration Status
+            </div>
+            {trip.driver && (
+              <div className="flex items-center gap-2.5 bg-white border border-slate-200 rounded-xl px-4 py-2.5">
+                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-xs border border-slate-200">
+                  {trip.driver.name?.[0]}
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-800">{trip.driver.name}</p>
+                  <p className={`text-[10px] font-bold uppercase ${
+                    trip.driver.status === 'On Trip' ? 'text-blue-600' :
+                    trip.driver.status === 'Available' ? 'text-emerald-600' : 'text-slate-500'
+                  }`}>Driver • {trip.driver.status}</p>
+                </div>
+              </div>
+            )}
+            {trip.vehicle && (
+              <div className="flex items-center gap-2.5 bg-white border border-slate-200 rounded-xl px-4 py-2.5">
+                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-xs border border-slate-200">
+                  🚛
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-800">{trip.vehicle.registrationNumber}</p>
+                  <p className={`text-[10px] font-bold uppercase ${
+                    trip.vehicle.status === 'On Trip' ? 'text-blue-600' :
+                    trip.vehicle.status === 'Available' ? 'text-emerald-600' : 'text-slate-500'
+                  }`}>Vehicle • {trip.vehicle.status}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Main Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left column: form sections */}
+          <div className="lg:col-span-2 space-y-6">
+
+            {/* Section 1: Driver Assignment */}
             <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">2. Driver Assignment</h2>
-              {isFleetManager ? (
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                <h2 className="text-base font-bold text-slate-800">Driver Assignment</h2>
+                {selectedDriver && (
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
+                    isExpiredLicense(selectedDriverObj) ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                    'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  }`}>
+                    {isExpiredLicense(selectedDriverObj) ? 'License Expired' : 'License Valid'}
+                  </span>
+                )}
+              </div>
+
+              {isFleetManager && !isTerminal && !isDispatched && (
                 <div className="mb-4">
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Select Driver</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Select Driver</label>
                   <select
                     value={selectedDriver}
-                    onChange={(e) => setSelectedDriver(e.target.value)}
-                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-800/20"
+                    onChange={e => setSelectedDriver(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-800/20"
                   >
-                    <option value="">-- Unassigned --</option>
+                    <option value="">— Unassigned —</option>
                     {drivers.map(d => {
-                      const isExpired = isDriverLicenseExpired(d);
-                      const isBusy = d.status !== 'Available';
-                      const isDisabled = isBusy || isExpired;
+                      const expired = isExpiredLicense(d);
+                      const busy = d.status !== 'Available' && d._id !== trip.driver?._id;
                       return (
-                        <option
-                          key={d._id}
-                          value={d._id}
-                          disabled={isDisabled && d._id !== trip.driver?._id}
-                        >
-                          {d.name} ({d.status === 'Available' ? 'Available' : 'Busy: ' + d.status}) {isExpired ? '[Expired License]' : ''}
+                        <option key={d._id} value={d._id} disabled={busy || expired}>
+                          {d.name} — {d.status} {expired ? '[Expired License]' : ''} {busy ? '[Busy]' : ''}
                         </option>
                       );
                     })}
                   </select>
                 </div>
-              ) : null}
+              )}
 
-              {selectedDriver ? (
-                (() => {
-                  const driver = getSelectedDriverDetails();
-                  if (!driver) return null;
-                  const isExpired = isDriverLicenseExpired(driver);
-                  return (
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                      <div>
-                        <span className="text-slate-400 block uppercase font-semibold">Driver Name</span>
-                        <span className="font-semibold text-slate-800">{driver.name}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block uppercase font-semibold">License Number</span>
-                        <span className="font-semibold text-slate-800">{driver.licenseNumber} ({driver.licenseCategory})</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block uppercase font-semibold">License Validity</span>
-                        <span className={`font-semibold ${isExpired ? 'text-red-600' : 'text-slate-800'}`}>
-                          {new Date(driver.licenseExpiryDate).toLocaleDateString()} {isExpired ? '(Expired)' : '(Valid)'}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block uppercase font-semibold">Phone / Score / Exp</span>
-                        <span className="font-semibold text-slate-800">{driver.contactNumber} / {driver.safetyScore} pts / {driver.experience || 0} yrs</span>
-                      </div>
+              {selectedDriverObj ? (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                  {[
+                    { label: 'Name', value: selectedDriverObj.name },
+                    { label: 'License', value: `${selectedDriverObj.licenseNumber} (${selectedDriverObj.licenseCategory})` },
+                    { label: 'Expiry', value: <span className={isExpiredLicense(selectedDriverObj) ? 'text-rose-600 font-semibold' : ''}>{new Date(selectedDriverObj.licenseExpiryDate).toLocaleDateString()}</span> },
+                    { label: 'Safety Score / Exp', value: `${selectedDriverObj.safetyScore}/100 · ${selectedDriverObj.experience || 0} yrs` },
+                  ].map(({ label, value }) => (
+                    <div key={label}>
+                      <span className="text-slate-400 block font-semibold uppercase text-[10px]">{label}</span>
+                      <span className="font-semibold text-slate-800 block mt-0.5">{value}</span>
                     </div>
-                  );
-                })()
+                  ))}
+                </div>
               ) : (
-                <p className="text-sm text-slate-400 italic">No driver assigned to this trip.</p>
+                <p className="text-sm text-slate-400 italic">No driver assigned.</p>
               )}
             </div>
 
-            {/* SECTION 3: Vehicle Assignment */}
+            {/* Section 2: Vehicle Assignment */}
             <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">3. Vehicle Assignment</h2>
-              {isFleetManager ? (
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                <h2 className="text-base font-bold text-slate-800">Vehicle Assignment</h2>
+                {selectedVehicleObj && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400">Fuel:</span>
+                    <div className="w-20 bg-slate-200 rounded-full h-2">
+                      <div
+                        className={`h-2 rounded-full ${selectedVehicleObj.fuelLevel > 40 ? 'bg-emerald-500' : selectedVehicleObj.fuelLevel > 20 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                        style={{ width: `${selectedVehicleObj.fuelLevel || 0}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-bold text-slate-600">{selectedVehicleObj.fuelLevel || 0}%</span>
+                  </div>
+                )}
+              </div>
+
+              {isFleetManager && !isTerminal && !isDispatched && (
                 <div className="mb-4">
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Select Vehicle</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Select Vehicle</label>
                   <select
                     value={selectedVehicle}
-                    onChange={(e) => setSelectedVehicle(e.target.value)}
-                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-800/20"
+                    onChange={e => setSelectedVehicle(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-800/20"
                   >
-                    <option value="">-- Unassigned --</option>
+                    <option value="">— Unassigned —</option>
                     {vehicles.map(v => {
-                      const isBusy = v.status !== 'Available';
+                      const busy = v.status !== 'Available' && v._id !== trip.vehicle?._id;
                       return (
-                        <option
-                          key={v._id}
-                          value={v._id}
-                          disabled={isBusy && v._id !== trip.vehicle?._id}
-                        >
-                          {v.registrationNumber} - {v.name} ({v.status})
+                        <option key={v._id} value={v._id} disabled={busy}>
+                          {v.registrationNumber} — {v.name} ({v.status}) {busy ? '[Busy]' : ''}
                         </option>
                       );
                     })}
                   </select>
                 </div>
-              ) : null}
+              )}
 
-              {selectedVehicle ? (
-                (() => {
-                  const vehicle = getSelectedVehicleDetails();
-                  if (!vehicle) return null;
-                  return (
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                      <div>
-                        <span className="text-slate-400 block uppercase font-semibold">Reg. Number</span>
-                        <span className="font-semibold text-slate-800">{vehicle.registrationNumber}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block uppercase font-semibold">Model / Type</span>
-                        <span className="font-semibold text-slate-800">{vehicle.name} ({vehicle.type})</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block uppercase font-semibold">Capacity Limit</span>
-                        <span className="font-semibold text-slate-800">{vehicle.maxLoadCapacity} kg</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block uppercase font-semibold">Odometer / Fuel</span>
-                        <span className="font-semibold text-slate-800">{vehicle.odometer} km / {vehicle.fuelLevel}%</span>
-                      </div>
+              {selectedVehicleObj ? (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                  {[
+                    { label: 'Registration', value: selectedVehicleObj.registrationNumber },
+                    { label: 'Model / Type', value: `${selectedVehicleObj.name} (${selectedVehicleObj.type})` },
+                    { label: 'Max Capacity', value: `${selectedVehicleObj.maxLoadCapacity} kg` },
+                    { label: 'Odometer', value: `${selectedVehicleObj.odometer?.toLocaleString() || 0} km` },
+                  ].map(({ label, value }) => (
+                    <div key={label}>
+                      <span className="text-slate-400 block font-semibold uppercase text-[10px]">{label}</span>
+                      <span className="font-semibold text-slate-800 block mt-0.5">{value}</span>
                     </div>
-                  );
-                })()
+                  ))}
+                </div>
               ) : (
-                <p className="text-sm text-slate-400 italic">No vehicle assigned to this trip.</p>
+                <p className="text-sm text-slate-400 italic">No vehicle assigned.</p>
               )}
             </div>
 
-            {/* SECTION 4: Route Planning */}
+            {/* Section 3: Route Planning */}
             <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">4. Route Planning</h2>
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Start Location</label>
+              <h2 className="text-base font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">Route Planning</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {[
+                  { label: 'Start Location', field: 'source', placeholder: 'e.g. New York Hub' },
+                  { label: 'Destination', field: 'destination', placeholder: 'e.g. Boston Facility' },
+                ].map(({ label, field, placeholder }) => (
+                  <div key={field}>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">{label}</label>
                     <input
                       type="text"
-                      disabled={!isFleetManager}
-                      value={routeForm.source}
-                      onChange={(e) => setRouteForm({ ...routeForm, source: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none"
+                      disabled={isReadOnly}
+                      placeholder={placeholder}
+                      value={routeForm[field]}
+                      onChange={e => setRouteForm(p => ({ ...p, [field]: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none disabled:bg-slate-50 disabled:text-slate-500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Destination</label>
-                    <input
-                      type="text"
-                      disabled={!isFleetManager}
-                      value={routeForm.destination}
-                      onChange={(e) => setRouteForm({ ...routeForm, destination: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                {/* Stops */}
+                ))}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Stops / Waypoints</label>
-                  {isFleetManager && (
-                    <div className="flex gap-2 mb-3">
-                      <input
-                        type="text"
-                        placeholder="Add stop name"
-                        value={routeForm.stopsInput}
-                        onChange={(e) => setRouteForm({ ...routeForm, stopsInput: e.target.value })}
-                        className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddStop}
-                        className="px-4 py-2 bg-slate-100 hover:bg-slate-250 text-slate-700 border border-slate-200 rounded-lg text-sm font-semibold transition"
-                      >
-                        + Add Stop
-                      </button>
-                    </div>
-                  )}
-
-                  {routeForm.stops.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {routeForm.stops.map((stop, idx) => (
-                        <div key={idx} className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs font-medium text-slate-600">
-                          <span>{stop}</span>
-                          {isFleetManager && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveStop(idx)}
-                              className="text-slate-400 hover:text-slate-600 font-bold"
-                            >
-                              &times;
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-400 italic">No intermediate stops added yet.</p>
-                  )}
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Estimated Distance (km)</label>
+                  <input
+                    type="number" min="0" disabled={isReadOnly}
+                    value={routeForm.estimatedDistance}
+                    onChange={e => setRouteForm(p => ({ ...p, estimatedDistance: Number(e.target.value) }))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none disabled:bg-slate-50"
+                  />
                 </div>
-
-                {/* Estimate fields */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Estimated Distance (km)</label>
-                    <input
-                      type="number"
-                      disabled={!isFleetManager}
-                      min="0"
-                      value={routeForm.estimatedDistance}
-                      onChange={(e) => setRouteForm({ ...routeForm, estimatedDistance: Number(e.target.value) })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Estimated Duration (mins)</label>
-                    <input
-                      type="number"
-                      disabled={!isFleetManager}
-                      min="0"
-                      value={routeForm.estimatedDuration}
-                      onChange={(e) => setRouteForm({ ...routeForm, estimatedDuration: Number(e.target.value) })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Estimated Duration (mins)</label>
+                  <input
+                    type="number" min="0" disabled={isReadOnly}
+                    value={routeForm.estimatedDuration}
+                    onChange={e => setRouteForm(p => ({ ...p, estimatedDuration: Number(e.target.value) }))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none disabled:bg-slate-50"
+                  />
                 </div>
+              </div>
+
+              {/* Stops */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Intermediate Stops</label>
+                {isFleetManager && !isReadOnly && (
+                  <div className="flex gap-2 mb-3">
+                    <input
+                      type="text" placeholder="Add stop name..."
+                      value={routeForm.stopsInput}
+                      onChange={e => setRouteForm(p => ({ ...p, stopsInput: e.target.value }))}
+                      onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddStop())}
+                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none"
+                    />
+                    <button type="button" onClick={handleAddStop} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-sm font-semibold transition">
+                      + Add
+                    </button>
+                  </div>
+                )}
+                {routeForm.stops.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {routeForm.stops.map((stop, i) => (
+                      <span key={i} className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs font-medium text-slate-600">
+                        {stop}
+                        {isFleetManager && !isReadOnly && (
+                          <button onClick={() => setRouteForm(p => ({ ...p, stops: p.stops.filter((_, idx) => idx !== i) }))} className="text-slate-400 hover:text-slate-700 font-bold">&times;</button>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 italic">No stops added.</p>
+                )}
               </div>
             </div>
 
-            {/* SECTION 5: Cargo Information */}
+            {/* Section 4: Cargo */}
             <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">5. Cargo Information</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Cargo Type</label>
-                  <input
-                    type="text"
-                    disabled={!isFleetManager}
-                    placeholder="e.g. Perishable Food"
-                    value={cargoForm.cargoType}
-                    onChange={(e) => setCargoForm({ ...cargoForm, cargoType: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Volume (m³)</label>
-                  <input
-                    type="number"
-                    disabled={!isFleetManager}
-                    min="0"
-                    value={cargoForm.volume}
-                    onChange={(e) => setCargoForm({ ...cargoForm, volume: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Packages Count</label>
-                  <input
-                    type="number"
-                    disabled={!isFleetManager}
-                    min="0"
-                    value={cargoForm.packages}
-                    onChange={(e) => setCargoForm({ ...cargoForm, packages: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Cargo Weight (kg)</label>
-                  <input
-                    type="number"
-                    disabled={!isFleetManager}
-                    min="0"
-                    value={cargoForm.cargoWeight}
-                    onChange={(e) => setCargoForm({ ...cargoForm, cargoWeight: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Special Handling Instructions</label>
+              <h2 className="text-base font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">Cargo Information</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[
+                  { label: 'Cargo Type', field: 'cargoType', type: 'text', placeholder: 'e.g. Perishables' },
+                  { label: 'Weight (kg)', field: 'cargoWeight', type: 'number', placeholder: '0' },
+                  { label: 'Volume (m³)', field: 'volume', type: 'number', placeholder: '0' },
+                  { label: 'Packages', field: 'packages', type: 'number', placeholder: '0' },
+                ].map(({ label, field, type, placeholder }) => (
+                  <div key={field}>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">{label}</label>
+                    <input
+                      type={type} disabled={isReadOnly} placeholder={placeholder}
+                      value={cargoForm[field]}
+                      onChange={e => setCargoForm(p => ({ ...p, [field]: type === 'number' ? Number(e.target.value) : e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none disabled:bg-slate-50"
+                    />
+                  </div>
+                ))}
+                <div className="md:col-span-3">
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Special Instructions</label>
                   <textarea
-                    rows="2"
-                    disabled={!isFleetManager}
-                    placeholder="e.g. Maintain temperature at 4°C."
+                    rows="2" disabled={isReadOnly}
+                    placeholder="e.g. Handle with care, temperature-sensitive"
                     value={cargoForm.specialInstructions}
-                    onChange={(e) => setCargoForm({ ...cargoForm, specialInstructions: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none"
+                    onChange={e => setCargoForm(p => ({ ...p, specialInstructions: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none disabled:bg-slate-50"
                   />
                 </div>
               </div>
             </div>
 
-            {/* SECTION 6: Fuel Planning */}
+            {/* Section 5: Documents */}
             <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">6. Fuel Planning</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 flex flex-col justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Est. Fuel Required</span>
-                    <span className="text-3xl font-extrabold text-slate-800">{estFuelLiters} <span className="text-sm font-semibold text-slate-500">Liters</span></span>
-                  </div>
-                  <span className="text-slate-400 text-xs mt-3 block">Estimated rate: {ESTIMATED_CONSUMPTION_RATE} L / km</span>
-                </div>
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 flex flex-col justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Estimated Fuel Cost</span>
-                    <span className="text-3xl font-extrabold text-slate-800">${estFuelCost} <span className="text-sm font-semibold text-slate-500">USD</span></span>
-                  </div>
-                  <span className="text-slate-400 text-xs mt-3 block">Market avg price: ${ESTIMATED_FUEL_PRICE} / Liter</span>
-                </div>
-              </div>
-            </div>
-
-            {/* SECTION 8: Document Upload */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">8. Document Checklist Upload</h2>
-              
-              {isFleetManager && (
-                <form onSubmit={handleAddDocument} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-slate-50 p-4 border border-slate-200 rounded-xl">
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">File Name</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. driver_license_alex.pdf"
-                      value={docForm.name}
-                      onChange={(e) => setDocForm({ ...docForm, name: e.target.value })}
-                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Document Category</label>
-                    <div className="flex gap-2">
-                      <select
-                        value={docForm.type}
-                        onChange={(e) => setDocForm({ ...docForm, type: e.target.value })}
-                        className="flex-1 px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none"
-                      >
-                        <option value="Driver License">Driver License</option>
-                        <option value="Vehicle Registration">Vehicle Registration</option>
-                        <option value="Insurance">Insurance</option>
-                        <option value="Permit">Permit</option>
-                        <option value="Other">Other</option>
-                      </select>
-                      <button
-                        type="submit"
-                        className="px-3 bg-slate-800 text-white rounded-lg text-sm font-semibold hover:bg-slate-700"
-                      >
-                        + Add
-                      </button>
-                    </div>
-                  </div>
+              <h2 className="text-base font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">Compliance Documents</h2>
+              {isFleetManager && !isReadOnly && (
+                <form onSubmit={handleAddDocument} className="flex gap-3 mb-4 flex-wrap bg-slate-50 border border-slate-100 rounded-xl p-3">
+                  <input
+                    type="text" required placeholder="e.g. driver_license.pdf"
+                    value={docForm.name}
+                    onChange={e => setDocForm(p => ({ ...p, name: e.target.value }))}
+                    className="flex-1 min-w-48 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none"
+                  />
+                  <select
+                    value={docForm.type}
+                    onChange={e => setDocForm(p => ({ ...p, type: e.target.value }))}
+                    className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none"
+                  >
+                    {['Driver License', 'Vehicle Registration', 'Insurance', 'Permit', 'Other'].map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                  <button type="submit" className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-semibold hover:bg-slate-700">+ Add Doc</button>
                 </form>
               )}
-
               {documents.length > 0 ? (
                 <div className="space-y-2">
-                  {documents.map((doc, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3.5 border border-slate-100 rounded-xl hover:bg-slate-50 transition">
+                  {documents.map((doc, i) => (
+                    <div key={i} className="flex items-center justify-between px-4 py-3 border border-slate-100 rounded-xl hover:bg-slate-50 transition">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-slate-600 text-xs">
-                          {doc.type.slice(0, 2).toUpperCase()}
-                        </div>
+                        <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-[10px] font-bold text-slate-600 border border-slate-200">{doc.type.slice(0, 2).toUpperCase()}</div>
                         <div>
                           <p className="text-sm font-medium text-slate-800">{doc.name}</p>
-                          <span className="text-[10px] text-slate-600 font-semibold uppercase">{doc.type}</span>
+                          <p className="text-[10px] text-slate-500 uppercase font-semibold">{doc.type}</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-4">
                         <span className="text-xs text-slate-400">{new Date(doc.uploadedAt).toLocaleDateString()}</span>
-                        {isFleetManager && (
-                          <button
-                            onClick={() => handleRemoveDocument(idx)}
-                            className="text-red-500 hover:text-red-700 text-xs font-semibold"
-                          >
-                            Remove
-                          </button>
+                        {isFleetManager && !isReadOnly && (
+                          <button onClick={() => setDocuments(p => p.filter((_, idx) => idx !== i))} className="text-rose-400 hover:text-rose-600 text-xs font-semibold">Remove</button>
                         )}
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-slate-400 italic">No compliance documents uploaded yet.</p>
+                <p className="text-sm text-slate-400 italic">No documents uploaded.</p>
               )}
+            </div>
+
+            {/* Trip History / Timeline */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+              <h2 className="text-base font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">Trip Timeline</h2>
+              <div className="relative pl-6 border-l-2 border-slate-200 space-y-6 ml-2">
+                {[
+                  {
+                    num: 1, title: 'Draft Initiated', done: true,
+                    time: new Date(trip.createdAt).toLocaleString(),
+                    color: 'bg-slate-800 text-white',
+                  },
+                  {
+                    num: 2, title: 'Dispatched', done: !!trip.dispatchedAt,
+                    time: trip.dispatchedAt ? new Date(trip.dispatchedAt).toLocaleString() : 'Not yet dispatched',
+                    color: trip.dispatchedAt ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400 border border-slate-200',
+                    pending: !trip.dispatchedAt,
+                  },
+                  {
+                    num: 3, title: trip.status === 'Cancelled' ? 'Trip Cancelled' : 'Trip Completed',
+                    done: !!trip.completedAt,
+                    time: trip.completedAt ? new Date(trip.completedAt).toLocaleString() : 'In progress',
+                    color: trip.completedAt
+                      ? (trip.status === 'Cancelled' ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white')
+                      : 'bg-slate-100 text-slate-400 border border-slate-200',
+                    pending: !trip.completedAt,
+                  },
+                ].map(({ num, title, done, time, color, pending }) => (
+                  <div key={num} className="relative">
+                    <div className={`absolute -left-[31px] top-1 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold border-2 border-white ${color}`}>{num}</div>
+                    <h4 className={`text-sm font-semibold ${pending ? 'text-slate-400' : 'text-slate-800'}`}>{title}</h4>
+                    <p className="text-xs text-slate-400 mt-0.5">{time}</p>
+                  </div>
+                ))}
+              </div>
             </div>
 
           </div>
 
-          {/* Sticky Sidebar Details */}
-          <div className="space-y-8">
-            
-            {/* SECTION 7: Checklist Meter */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm sticky top-20">
-              <div className="border-b border-slate-100 pb-3 mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-slate-800">7. Checklist Progress</h2>
-                <span className="text-sm font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-full">
-                  {getChecklistPercentage()}%
-                </span>
-              </div>
+          {/* Right Sidebar */}
+          <div className="space-y-6">
 
-              <div className="w-full bg-slate-100 rounded-full h-3 mb-6 overflow-hidden">
+            {/* Fuel Estimates */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+              <h2 className="text-base font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">Fuel Planning</h2>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-center">
+                  <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Est. Fuel</p>
+                  <p className="text-2xl font-extrabold text-slate-800">{estFuelLiters}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Liters</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-center">
+                  <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Est. Cost</p>
+                  <p className="text-2xl font-extrabold text-slate-800">${estFuelCost}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">USD</p>
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-3 text-center">Rate: {FUEL_RATE} L/km · ${FUEL_PRICE}/L</p>
+            </div>
+
+            {/* Checklist */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                <h2 className="text-base font-bold text-slate-800">Checklist</h2>
+                <span className="text-sm font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-full">{checklistPct()}%</span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-2 mb-5">
                 <div
-                  className="bg-slate-800 h-3 rounded-full transition-all duration-300"
-                  style={{ width: `${getChecklistPercentage()}%` }}
+                  className={`h-2 rounded-full transition-all duration-300 ${checklistPct() === 100 ? 'bg-emerald-500' : 'bg-slate-800'}`}
+                  style={{ width: `${checklistPct()}%` }}
                 />
               </div>
-
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 {[
-                  { key: 'driverAssigned', label: 'Driver Assigned', description: 'Available driver linked' },
-                  { key: 'vehicleAssigned', label: 'Vehicle Assigned', description: 'Available vehicle linked' },
-                  { key: 'routePlanned', label: 'Route Planned', description: 'Source, destination, and distance set' },
-                  { key: 'fuelPlanned', label: 'Fuel Planned', description: 'Estimate requirement generated' },
-                  { key: 'documentsUploaded', label: 'Documents Uploaded', description: 'License and insurance records attached' },
-                  { key: 'cargoVerified', label: 'Cargo Verified', description: 'Manual weight check' },
-                  { key: 'safetyInspection', label: 'Safety Inspection', description: 'Vehicle mechanical status check' },
-                ].map((item) => {
-                  const isChecked = checklist[item.key];
-                  const isAuto = ['driverAssigned', 'vehicleAssigned', 'routePlanned', 'fuelPlanned', 'documentsUploaded'].includes(item.key);
+                  { key: 'driverAssigned', label: 'Driver Assigned', auto: true },
+                  { key: 'vehicleAssigned', label: 'Vehicle Assigned', auto: true },
+                  { key: 'routePlanned', label: 'Route Planned', auto: true },
+                  { key: 'fuelPlanned', label: 'Fuel Planned', auto: true },
+                  { key: 'documentsUploaded', label: 'Documents Uploaded', auto: true },
+                  { key: 'cargoVerified', label: 'Cargo Verified', auto: false },
+                  { key: 'safetyInspection', label: 'Safety Inspection', auto: false },
+                ].map(({ key, label, auto }) => {
+                  const checked = checklist[key];
                   return (
-                    <div key={item.key} className="flex items-start gap-3 p-2 rounded-lg hover:bg-slate-50 transition">
+                    <label key={key} className={`flex items-center gap-3 p-2 rounded-lg transition cursor-pointer ${checked ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}>
                       <input
                         type="checkbox"
-                        disabled={!isFleetManager || isAuto}
-                        checked={isChecked}
-                        onChange={(e) => setChecklist({ ...checklist, [item.key]: e.target.checked })}
-                        className="mt-1 h-4.5 w-4.5 text-slate-800 border-slate-300 rounded focus:ring-slate-850"
+                        checked={checked}
+                        disabled={auto || !isFleetManager || isReadOnly}
+                        onChange={e => setChecklist(p => ({ ...p, [key]: e.target.checked }))}
+                        className="w-4 h-4 text-slate-800 border-slate-300 rounded"
                       />
-                      <div>
-                        <label className="text-sm font-semibold text-slate-700 block leading-tight">{item.label}</label>
-                        <span className="text-[10px] text-slate-400 block mt-0.5">
-                          {item.description} {isAuto ? '(Auto-fill)' : ''}
-                        </span>
-                      </div>
-                    </div>
+                      <span className={`text-sm font-medium flex-1 ${checked ? 'text-slate-700' : 'text-slate-500'}`}>{label}</span>
+                      {auto && <span className="text-[9px] text-slate-400 font-semibold uppercase">Auto</span>}
+                    </label>
                   );
                 })}
               </div>
             </div>
 
-            {/* SECTION 9: Approval Actions */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">9. Trip Approvals</h2>
-              
-              <div className="space-y-3">
-                {isFleetManager && (
-                  <>
+            {/* Action Panel */}
+            {isFleetManager && (
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                <h2 className="text-base font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">Actions</h2>
+                <div className="space-y-2.5">
+
+                  {/* SAVE - available in prep stages */}
+                  {!isTerminal && !isDispatched && (
                     <button
-                      onClick={() => handleSave()}
+                      onClick={handleSave}
                       disabled={saving}
-                      className="w-full py-2.5 bg-slate-850 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold transition"
+                      className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-sm font-semibold transition shadow-sm"
                     >
-                      {saving ? 'Saving...' : 'Save Draft Settings'}
+                      {saving ? 'Saving...' : 'Save Draft'}
                     </button>
+                  )}
 
-                    {trip.status === 'Draft' && (
-                      <button
-                        onClick={() => handleWorkflowTransition('Ready for Approval')}
-                        disabled={saving}
-                        className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 rounded-lg text-sm font-semibold transition"
-                      >
-                        Submit for Approval
-                      </button>
-                    )}
+                  {/* MARK READY FOR DISPATCH */}
+                  {['Draft', 'Vehicle Assigned', 'Driver Assigned', 'Route Planned'].includes(trip.status) && (
+                    <button
+                      onClick={() => handleTransition('Ready for Dispatch')}
+                      disabled={saving}
+                      className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-semibold transition shadow-sm"
+                    >
+                      Mark Ready for Dispatch
+                    </button>
+                  )}
 
-                    {trip.status === 'Ready for Approval' && (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleWorkflowTransition('Approved')}
-                          disabled={saving}
-                          className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition"
-                        >
-                          Approve Trip
-                        </button>
-                        <button
-                          onClick={() => handleWorkflowTransition('Draft')}
-                          disabled={saving}
-                          className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-semibold transition"
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    )}
+                  {/* DISPATCH — KEY INTEGRATION ACTION */}
+                  {trip.status === 'Ready for Dispatch' && (
+                    <button
+                      onClick={() => setConfirmAction({
+                        nextStatus: 'Dispatched',
+                        label: 'Dispatch Trip?',
+                        message: `This will set the Driver (${trip.driver?.name || 'Assigned'}) and Vehicle (${trip.vehicle?.registrationNumber || 'Assigned'}) to "On Trip" status.`,
+                        btnClass: 'bg-blue-600 hover:bg-blue-700',
+                        iconBg: 'bg-blue-100',
+                        icon: <svg className="w-7 h-7 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>,
+                      })}
+                      disabled={saving}
+                      className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition shadow-md"
+                    >
+                      ⚡ Dispatch Trip
+                    </button>
+                  )}
 
-                    {trip.status === 'Approved' && (
-                      <button
-                        onClick={() => handleWorkflowTransition('Ready for Dispatch')}
-                        disabled={saving}
-                        className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition"
-                      >
-                        Mark Ready for Dispatch
-                      </button>
-                    )}
-                  </>
-                )}
+                  {/* COMPLETE — KEY INTEGRATION ACTION */}
+                  {isDispatched && (
+                    <button
+                      onClick={() => setConfirmAction({
+                        nextStatus: 'Completed',
+                        label: 'Complete Trip?',
+                        message: `This will release the Driver and Vehicle back to "Available" status.`,
+                        btnClass: 'bg-emerald-600 hover:bg-emerald-700',
+                        iconBg: 'bg-emerald-100',
+                        icon: <svg className="w-7 h-7 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>,
+                      })}
+                      disabled={saving}
+                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition shadow-md"
+                    >
+                      ✓ Complete Trip
+                    </button>
+                  )}
 
-                {isFleetManager && trip.status === 'Ready for Dispatch' && (
-                  <button
-                    onClick={() => handleWorkflowTransition('Dispatched')}
-                    disabled={saving}
-                    className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition"
-                  >
-                    Dispatch Trip
-                  </button>
-                )}
+                  {/* CANCEL — KEY INTEGRATION ACTION */}
+                  {!isTerminal && (
+                    <button
+                      onClick={() => setConfirmAction({
+                        nextStatus: 'Cancelled',
+                        label: 'Cancel Trip?',
+                        message: `This will release the Driver and Vehicle back to "Available" status and mark the trip as Cancelled.`,
+                        btnClass: 'bg-rose-600 hover:bg-rose-700',
+                        iconBg: 'bg-rose-100',
+                        icon: <svg className="w-7 h-7 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>,
+                      })}
+                      disabled={saving}
+                      className="w-full py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-sm font-semibold transition"
+                    >
+                      Cancel Trip
+                    </button>
+                  )}
 
-                {!isFleetManager && (
-                  <p className="text-xs text-slate-400 text-center italic">
-                    Approvals and status transitions are reserved for Fleet Manager accounts.
-                  </p>
-                )}
+                  {isTerminal && (
+                    <p className="text-xs text-slate-400 text-center italic py-2">
+                      This trip is in a terminal state. No further actions available.
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* SECTION 10: Summary Panel Card */}
-            <div className="bg-slate-800 border border-slate-900 text-slate-300 rounded-2xl p-6 shadow-sm">
-              <h2 className="text-md font-bold text-white border-b border-slate-700 pb-3 mb-4">10. Quick Trip Summary</h2>
-              
-              <div className="space-y-4 text-xs">
-                <div>
-                  <span className="text-slate-400 block uppercase font-semibold text-[10px]">Active Status</span>
-                  <span className="font-bold text-white text-sm block mt-0.5">{trip.status}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block uppercase font-semibold text-[10px]">Assigned Driver</span>
-                  <span className="font-medium text-slate-200">
-                    {trip.driver ? trip.driver.name : 'None Assigned'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block uppercase font-semibold text-[10px]">Assigned Vehicle</span>
-                  <span className="font-medium text-slate-200">
-                    {trip.vehicle ? trip.vehicle.registrationNumber : 'None Assigned'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block uppercase font-semibold text-[10px]">Total Distance / Duration</span>
-                  <span className="font-medium text-slate-200">
-                    {routeForm.estimatedDistance} km / {routeForm.estimatedDuration} mins
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block uppercase font-semibold text-[10px]">Fuel Plan Liters</span>
-                  <span className="font-medium text-slate-200">{estFuelLiters} Liters (${estFuelCost})</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block uppercase font-semibold text-[10px]">Cargo Details</span>
-                  <span className="font-medium text-slate-200">
-                    {cargoForm.cargoType || 'No details'} ({cargoForm.cargoWeight} kg)
-                  </span>
-                </div>
+            {/* Summary Card */}
+            <div className="bg-slate-900 text-slate-300 rounded-2xl p-6 shadow-sm">
+              <h2 className="text-sm font-bold text-white border-b border-slate-700 pb-3 mb-4">Trip Summary</h2>
+              <div className="space-y-3 text-xs">
+                {[
+                  { label: 'Status', value: trip.status, bold: true, white: true },
+                  { label: 'Priority', value: priority },
+                  { label: 'Route', value: `${trip.source} → ${trip.destination}` },
+                  { label: 'Distance', value: `${routeForm.estimatedDistance} km` },
+                  { label: 'Duration', value: `${routeForm.estimatedDuration} mins` },
+                  { label: 'Cargo', value: `${cargoForm.cargoType || 'N/A'} · ${cargoForm.cargoWeight} kg` },
+                  { label: 'Driver', value: trip.driver?.name || 'Not Assigned' },
+                  { label: 'Vehicle', value: trip.vehicle?.registrationNumber || 'Not Assigned' },
+                  { label: 'Fuel Plan', value: `${estFuelLiters} L · $${estFuelCost}` },
+                  { label: 'Checklist', value: `${checklistPct()}%` },
+                ].map(({ label, value, bold, white }) => (
+                  <div key={label} className="flex justify-between">
+                    <span className="text-slate-500 font-semibold uppercase text-[10px]">{label}</span>
+                    <span className={`font-medium ${white ? 'text-white font-bold' : 'text-slate-200'}`}>{value}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
           </div>
-
         </div>
-
       </div>
     </div>
   );

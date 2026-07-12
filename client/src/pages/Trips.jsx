@@ -19,6 +19,12 @@ export default function Trips() {
     priority: 'Medium',
   });
 
+  // Search & Filter States
+  const [searchSource, setSearchSource] = useState('');
+  const [searchDest, setSearchDest] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterPriority, setFilterPriority] = useState('');
+
   const isFleetManager = user?.role === 'FleetManager';
 
   let title = 'Trips';
@@ -99,32 +105,121 @@ export default function Trips() {
     }
   };
 
+  const filteredTrips = trips.filter((t) => {
+    const matchesSource = (t.source || '').toLowerCase().includes(searchSource.toLowerCase());
+    const matchesDest = (t.destination || '').toLowerCase().includes(searchDest.toLowerCase());
+    const matchesStatus = filterStatus ? t.status === filterStatus : true;
+    const matchesPriority = filterPriority ? t.priority === filterPriority : true;
+    return matchesSource && matchesDest && matchesStatus && matchesPriority;
+  });
+
+  // Stats derived from trips list
+  const stats = {
+    total: trips.length,
+    active: trips.filter(t => !['Dispatched', 'Completed', 'Cancelled'].includes(t.status)).length,
+    dispatched: trips.filter(t => t.status === 'Dispatched').length,
+    completed: trips.filter(t => t.status === 'Completed').length,
+    cancelled: trips.filter(t => t.status === 'Cancelled').length,
+  };
+
   return (
-    <div className="p-8">
-      <div className="max-w-6xl mx-auto">
+    <div className="p-6 md:p-8">
+      <div className="max-w-7xl mx-auto">
         {/* Toast Notification */}
         {successMsg && (
-          <div className="fixed top-4 right-4 z-50 bg-emerald-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 border border-emerald-500 animate-bounce">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <div className="fixed top-4 right-4 z-50 bg-emerald-700 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-emerald-600">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span className="text-sm font-medium">{successMsg}</span>
+            <span className="text-sm font-semibold">{successMsg}</span>
           </div>
         )}
 
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-800 tracking-tight">{title}</h1>
-            <p className="text-sm text-slate-500 mt-1">Manage and track trip setup stages</p>
+            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">{title}</h1>
+            <p className="text-sm text-slate-500 mt-0.5">Manage and track trip lifecycle from Draft to Dispatch</p>
           </div>
           {isFleetManager && (
             <button
               onClick={() => setShowModal(true)}
-              className="px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition"
+              className="px-5 py-2.5 bg-slate-800 text-white rounded-xl hover:bg-slate-700 transition text-sm font-semibold shadow-sm"
             >
               + Create Trip
             </button>
           )}
+        </div>
+
+        {/* Stats Row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+          {[
+            { label: 'Total', count: stats.total, color: 'border-slate-200 bg-white', numColor: 'text-slate-800' },
+            { label: 'In Preparation', count: stats.active, color: 'border-amber-200 bg-amber-50', numColor: 'text-amber-700' },
+            { label: 'Dispatched', count: stats.dispatched, color: 'border-blue-200 bg-blue-50', numColor: 'text-blue-700' },
+            { label: 'Completed', count: stats.completed, color: 'border-emerald-200 bg-emerald-50', numColor: 'text-emerald-700' },
+          ].map(({ label, count, color, numColor }) => (
+            <div key={label} className={`rounded-2xl border p-4 ${color} shadow-sm`}>
+              <p className="text-[10px] font-bold uppercase text-slate-400 tracking-widest mb-1">{label}</p>
+              <p className={`text-3xl font-extrabold ${numColor}`}>{count}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Search & Filter Panel */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 mb-6 shadow-sm">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Search Source</label>
+              <input
+                type="text"
+                placeholder="e.g. New York"
+                value={searchSource}
+                onChange={(e) => setSearchSource(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-800/10"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Search Destination</label>
+              <input
+                type="text"
+                placeholder="e.g. Boston"
+                value={searchDest}
+                onChange={(e) => setSearchDest(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-800/10"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Filter Status</label>
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-800/10"
+              >
+                <option value="">All Statuses</option>
+                <option value="Draft">Draft</option>
+                <option value="Vehicle Assigned">Vehicle Assigned</option>
+                <option value="Driver Assigned">Driver Assigned</option>
+                <option value="Route Planned">Route Planned</option>
+                <option value="Ready for Dispatch">Ready for Dispatch</option>
+                <option value="Dispatched">Dispatched</option>
+                <option value="Completed">Completed</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Filter Priority</label>
+              <select
+                value={filterPriority}
+                onChange={(e) => setFilterPriority(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-800/10"
+              >
+                <option value="">All Priorities</option>
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+              </select>
+            </div>
+          </div>
         </div>
 
         {error && (
@@ -142,7 +237,7 @@ export default function Trips() {
               <div className="w-8 h-8 border-4 border-slate-800 border-t-transparent rounded-full animate-spin"></div>
               <span>Loading trips...</span>
             </div>
-          ) : trips.length === 0 ? (
+          ) : filteredTrips.length === 0 ? (
             <div className="p-12 text-center">
               <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-200">
                 <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -169,7 +264,7 @@ export default function Trips() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
-                {trips.map((t) => (
+                {filteredTrips.map((t) => (
                   <tr key={t._id} className="hover:bg-slate-50/50 transition">
                     <td className="px-6 py-4">
                       <div className="font-semibold text-slate-800 flex items-center gap-1.5">
