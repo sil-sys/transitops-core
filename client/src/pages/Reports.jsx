@@ -53,6 +53,143 @@ export default function Reports() {
     document.body.removeChild(link);
   };
 
+  const handleExportPDF = () => {
+    const printWindow = window.open('', '_blank');
+    const today = new Date().toLocaleDateString();
+    
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Financial Report - ${today}</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+              color: #1e293b;
+              padding: 40px;
+              max-width: 800px;
+              margin: 0 auto;
+            }
+            .header {
+              border-bottom: 2px solid #e2e8f0;
+              padding-bottom: 20px;
+              margin-bottom: 30px;
+            }
+            .header h1 {
+              font-size: 28px;
+              margin: 0 0 5px 0;
+              color: #0f172a;
+            }
+            .header p {
+              font-size: 14px;
+              color: #64748b;
+              margin: 0;
+            }
+            .date {
+              font-size: 12px;
+              color: #94a3b8;
+              text-align: right;
+              margin-top: -20px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 20px;
+            }
+            th {
+              text-align: left;
+              padding: 12px 16px;
+              background-color: #f8fafc;
+              border-bottom: 2px solid #e2e8f0;
+              color: #475569;
+              font-size: 12px;
+              text-transform: uppercase;
+              letter-spacing: 0.05em;
+            }
+            td {
+              padding: 16px;
+              border-bottom: 1px solid #f1f5f9;
+              font-size: 14px;
+            }
+            .metric {
+              font-weight: 600;
+              color: #334155;
+            }
+            .value {
+              font-weight: 700;
+              color: #0f172a;
+              text-align: right;
+            }
+            .footer {
+              margin-top: 50px;
+              text-align: center;
+              font-size: 12px;
+              color: #94a3b8;
+              border-top: 1px solid #e2e8f0;
+              padding-top: 20px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>TransitOps Financial Report</h1>
+            <p>Aggregate fleet and operational costs overview</p>
+          </div>
+          <div class="date">Generated on: ${today}</div>
+          
+          <table>
+            <thead>
+              <tr>
+                <th>Operational Metric</th>
+                <th style="text-align: right;">Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="metric">Total Revenue</td>
+                <td class="value">$${costs.totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              </tr>
+              <tr>
+                <td class="metric">Fuel Cost</td>
+                <td class="value">$${costs.fuelCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              </tr>
+              <tr>
+                <td class="metric">Maintenance Cost</td>
+                <td class="value">$${costs.maintenanceCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              </tr>
+              <tr>
+                <td class="metric">Total Operational Cost</td>
+                <td class="value">$${costs.totalOperationalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              </tr>
+              <tr>
+                <td class="metric">Fuel Efficiency</td>
+                <td class="value">${costs.fuelEfficiency} km/L</td>
+              </tr>
+              <tr>
+                <td class="metric">Fleet Utilization</td>
+                <td class="value">${costs.fleetUtilization}%</td>
+              </tr>
+              <tr>
+                <td class="metric">Vehicle ROI</td>
+                <td class="value">${costs.vehicleROI}%</td>
+              </tr>
+            </tbody>
+          </table>
+          
+          <div class="footer">
+            TransitOps Fleet Management System &copy; ${new Date().getFullYear()}
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+              setTimeout(function() { window.close(); }, 500);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   return (
     <div className="p-8 space-y-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between">
@@ -60,14 +197,24 @@ export default function Reports() {
           <h1 className="text-2xl font-semibold text-slate-800">Financial Reports</h1>
           <p className="text-sm text-slate-500">Aggregate operational costs overview</p>
         </div>
-        <button 
-          onClick={handleExportCSV}
-          disabled={loading}
-          className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition flex items-center gap-2 disabled:opacity-50"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-          Export CSV
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={handleExportCSV}
+            disabled={loading}
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-semibold transition flex items-center gap-2 disabled:opacity-50 border border-slate-200"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+            Export CSV
+          </button>
+          <button 
+            onClick={handleExportPDF}
+            disabled={loading}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition flex items-center gap-2 disabled:opacity-50"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Export PDF
+          </button>
+        </div>
       </div>
 
       {error && (
