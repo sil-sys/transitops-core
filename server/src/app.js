@@ -7,6 +7,8 @@ const errorHandler = require('./middleware/errorHandler');
 const vehicleRoutes = require('./routes/vehicleRoutes');
 const driverRoutes = require('./routes/driverRoutes');
 const tripRoutes = require('./routes/tripRoutes');
+const fuelRoutes = require('./routes/fuelRoutes');
+const expenseRoutes = require('./routes/expenseRoutes');
 const app = express();
 
 const allowedOrigins = [process.env.CLIENT_URL, 'http://localhost:5173', 'http://localhost:5174'];
@@ -36,6 +38,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/drivers', driverRoutes);
 app.use('/api/trips', tripRoutes);
+app.use('/api/fuel', fuelRoutes);
+app.use('/api/expenses', expenseRoutes);
 
 // Error handling (must stay last)
 app.use(notFound);
