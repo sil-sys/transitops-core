@@ -101,6 +101,14 @@ const tripSchema = new mongoose.Schema(
         uploadedAt: { type: Date, default: Date.now },
       }
     ],
+    dispatchedAt: {
+      type: Date,
+      default: null,
+    },
+    completedAt: {
+      type: Date,
+      default: null,
+    },
     status: {
       type: String,
       enum: [
@@ -108,8 +116,6 @@ const tripSchema = new mongoose.Schema(
         'Vehicle Assigned',
         'Driver Assigned',
         'Route Planned',
-        'Ready for Approval',
-        'Approved',
         'Ready for Dispatch',
         'Dispatched',
         'Completed',

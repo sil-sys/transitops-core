@@ -89,7 +89,7 @@ const updateTrip = async (req, res, next) => {
     let trip = await Trip.findById(req.params.id);
     if (!trip) return next(new ApiError(404, 'Trip not found'));
 
-    // Authorization checks
+    // Authorization: Drivers can only update their own trips
     if (req.user.role === 'Driver') {
       const driverDoc = await Driver.findOne({ name: req.user.name });
       if (!driverDoc || trip.driver?.toString() !== driverDoc._id.toString()) {
@@ -97,40 +97,98 @@ const updateTrip = async (req, res, next) => {
       }
     }
 
-    const previousDriver = trip.driver ? trip.driver.toString() : null;
-    const previousVehicle = trip.vehicle ? trip.vehicle.toString() : null;
+    const incomingStatus = req.body.status;
+    const currentStatus = trip.status;
 
+    // Enforce status transition validation
+    if (incomingStatus && incomingStatus !== currentStatus) {
+      const validTransitions = {
+        'Draft': ['Vehicle Assigned', 'Driver Assigned', 'Route Planned', 'Ready for Dispatch', 'Cancelled'],
+        'Vehicle Assigned': ['Draft', 'Driver Assigned', 'Route Planned', 'Ready for Dispatch', 'Cancelled'],
+        'Driver Assigned': ['Draft', 'Vehicle Assigned', 'Route Planned', 'Ready for Dispatch', 'Cancelled'],
+        'Route Planned': ['Draft', 'Vehicle Assigned', 'Driver Assigned', 'Ready for Dispatch', 'Cancelled'],
+        'Ready for Dispatch': ['Dispatched', 'Cancelled'],
+        'Dispatched': ['Completed', 'Cancelled'],
+        'Completed': [],
+        'Cancelled': []
+      };
+
+      const allowed = validTransitions[currentStatus] || [];
+      if (!allowed.includes(incomingStatus)) {
+        return next(new ApiError(400, `Invalid status transition from '${currentStatus}' to '${incomingStatus}'`));
+      }
+
+      // Auto-set timestamps
+      if (incomingStatus === 'Dispatched') {
+        req.body.dispatchedAt = Date.now();
+      } else if (incomingStatus === 'Completed' || incomingStatus === 'Cancelled') {
+        req.body.completedAt = Date.now();
+      }
+    }
+
+    const previousDriverId = trip.driver ? trip.driver.toString() : null;
+    const previousVehicleId = trip.vehicle ? trip.vehicle.toString() : null;
+
+    // Apply the update
     trip = await Trip.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true,
     }).populate('driver').populate('vehicle');
 
-    // Update Driver Availability if modified
-    const currentDriver = trip.driver ? trip.driver._id.toString() : null;
-    if (currentDriver !== previousDriver) {
-      if (previousDriver) {
-        await Driver.findByIdAndUpdate(previousDriver, { status: 'Available' });
+    const currentDriverId = trip.driver ? trip.driver._id.toString() : null;
+    const currentVehicleId = trip.vehicle ? trip.vehicle._id.toString() : null;
+
+    // --- INTEGRATION: Trip ↔ Vehicle ↔ Driver ---
+
+    // 1) ON DISPATCH: Lock driver and vehicle to 'On Trip'
+    if (incomingStatus === 'Dispatched') {
+      if (currentDriverId) {
+        await Driver.findByIdAndUpdate(currentDriverId, { status: 'On Trip' });
       }
-      if (currentDriver) {
-        await Driver.findByIdAndUpdate(currentDriver, { status: 'On Trip' });
+      if (currentVehicleId) {
+        await Vehicle.findByIdAndUpdate(currentVehicleId, { status: 'On Trip' });
       }
     }
 
-    // Update Vehicle Availability if modified
-    const currentVehicle = trip.vehicle ? trip.vehicle._id.toString() : null;
-    if (currentVehicle !== previousVehicle) {
-      if (previousVehicle) {
-        await Vehicle.findByIdAndUpdate(previousVehicle, { status: 'Available' });
+    // 2) ON COMPLETE or CANCEL: Release driver and vehicle back to 'Available'
+    else if (incomingStatus === 'Completed' || incomingStatus === 'Cancelled') {
+      // Release current driver
+      if (currentDriverId) {
+        await Driver.findByIdAndUpdate(currentDriverId, { status: 'Available' });
       }
-      if (currentVehicle) {
-        await Vehicle.findByIdAndUpdate(currentVehicle, { status: 'On Trip' });
+      // Also release previous driver if it changed (edge case)
+      if (previousDriverId && previousDriverId !== currentDriverId) {
+        await Driver.findByIdAndUpdate(previousDriverId, { status: 'Available' });
+      }
+      // Release current vehicle
+      if (currentVehicleId) {
+        await Vehicle.findByIdAndUpdate(currentVehicleId, { status: 'Available' });
+      }
+      // Also release previous vehicle if it changed (edge case)
+      if (previousVehicleId && previousVehicleId !== currentVehicleId) {
+        await Vehicle.findByIdAndUpdate(previousVehicleId, { status: 'Available' });
       }
     }
 
-    // Handle terminal status completions and cancellations
-    if (trip.status === 'Completed' || trip.status === 'Cancelled') {
-      if (trip.driver) await Driver.findByIdAndUpdate(trip.driver._id, { status: 'Available' });
-      if (trip.vehicle) await Vehicle.findByIdAndUpdate(trip.vehicle._id, { status: 'Available' });
+    // 3) ON DRIVER REASSIGNMENT (during prep stages): update old/new driver status
+    else if (currentDriverId !== previousDriverId) {
+      if (previousDriverId) {
+        await Driver.findByIdAndUpdate(previousDriverId, { status: 'Available' });
+      }
+      // Only mark new driver 'On Trip' if the trip is already active
+      if (currentDriverId && currentStatus === 'Dispatched') {
+        await Driver.findByIdAndUpdate(currentDriverId, { status: 'On Trip' });
+      }
+    }
+
+    // 4) ON VEHICLE REASSIGNMENT (during prep stages): update old/new vehicle status
+    else if (currentVehicleId !== previousVehicleId) {
+      if (previousVehicleId) {
+        await Vehicle.findByIdAndUpdate(previousVehicleId, { status: 'Available' });
+      }
+      if (currentVehicleId && currentStatus === 'Dispatched') {
+        await Vehicle.findByIdAndUpdate(currentVehicleId, { status: 'On Trip' });
+      }
     }
 
     res.status(200).json({ success: true, data: trip });
