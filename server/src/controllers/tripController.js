@@ -24,7 +24,39 @@ const getTrips = async (req, res, next) => {
       .populate('vehicle')
       .sort({ createdAt: -1 });
 
-    res.status(200).json({ success: true, count: trips.length, data: trips });
+    // Self-healing database alignment for all fetched trips
+    let anyHealed = false;
+    for (const trip of trips) {
+      if (trip.status === 'Dispatched') {
+        if (trip.driver && trip.driver.status !== 'On Trip') {
+          await Driver.findByIdAndUpdate(trip.driver._id, { status: 'On Trip' });
+          anyHealed = true;
+        }
+        if (trip.vehicle && trip.vehicle.status !== 'On Trip') {
+          await Vehicle.findByIdAndUpdate(trip.vehicle._id, { status: 'On Trip' });
+          anyHealed = true;
+        }
+      } else if (trip.status === 'Completed' || trip.status === 'Cancelled') {
+        if (trip.driver && trip.driver.status !== 'Available') {
+          await Driver.findByIdAndUpdate(trip.driver._id, { status: 'Available' });
+          anyHealed = true;
+        }
+        if (trip.vehicle && trip.vehicle.status !== 'Available') {
+          await Vehicle.findByIdAndUpdate(trip.vehicle._id, { status: 'Available' });
+          anyHealed = true;
+        }
+      }
+    }
+
+    let finalTrips = trips;
+    if (anyHealed) {
+      finalTrips = await Trip.find(filter)
+        .populate('driver')
+        .populate('vehicle')
+        .sort({ createdAt: -1 });
+    }
+
+    res.status(200).json({ success: true, count: finalTrips.length, data: finalTrips });
   } catch (error) {
     next(error);
   }
@@ -35,7 +67,7 @@ const getTrips = async (req, res, next) => {
 // @access Private
 const getTrip = async (req, res, next) => {
   try {
-    const trip = await Trip.findById(req.params.id)
+    let trip = await Trip.findById(req.params.id)
       .populate('driver')
       .populate('vehicle');
 
@@ -47,6 +79,34 @@ const getTrip = async (req, res, next) => {
       if (!driverDoc || trip.driver?._id.toString() !== driverDoc._id.toString()) {
         return next(new ApiError(403, 'You are not authorized to view this trip'));
       }
+    }
+
+    // Self-healing database alignment for the loaded trip
+    let healed = false;
+    if (trip.status === 'Dispatched') {
+      if (trip.driver && trip.driver.status !== 'On Trip') {
+        await Driver.findByIdAndUpdate(trip.driver._id, { status: 'On Trip' });
+        healed = true;
+      }
+      if (trip.vehicle && trip.vehicle.status !== 'On Trip') {
+        await Vehicle.findByIdAndUpdate(trip.vehicle._id, { status: 'On Trip' });
+        healed = true;
+      }
+    } else if (trip.status === 'Completed' || trip.status === 'Cancelled') {
+      if (trip.driver && trip.driver.status !== 'Available') {
+        await Driver.findByIdAndUpdate(trip.driver._id, { status: 'Available' });
+        healed = true;
+      }
+      if (trip.vehicle && trip.vehicle.status !== 'Available') {
+        await Vehicle.findByIdAndUpdate(trip.vehicle._id, { status: 'Available' });
+        healed = true;
+      }
+    }
+
+    if (healed) {
+      trip = await Trip.findById(req.params.id)
+        .populate('driver')
+        .populate('vehicle');
     }
 
     res.status(200).json({ success: true, data: trip });
@@ -190,6 +250,9 @@ const updateTrip = async (req, res, next) => {
         await Vehicle.findByIdAndUpdate(currentVehicleId, { status: 'On Trip' });
       }
     }
+
+    // Re-populate trip to get the latest driver and vehicle status after updates
+    trip = await Trip.findById(trip._id).populate('driver').populate('vehicle');
 
     res.status(200).json({ success: true, data: trip });
   } catch (error) {

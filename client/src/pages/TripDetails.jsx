@@ -105,7 +105,28 @@ export default function TripDetails() {
     }
   };
 
-  useEffect(() => { loadData(); }, [id]);
+  useEffect(() => {
+    loadData();
+
+    // Set up active polling to keep Driver/Vehicle status synchronized with backend
+    const interval = setInterval(async () => {
+      try {
+        const [tripRes, driversRes, vehiclesRes] = await Promise.all([
+          api.get(`/trips/${id}`),
+          api.get('/drivers'),
+          api.get('/vehicles'),
+        ]);
+        const t = tripRes.data.data;
+        setTrip(t);
+        setDrivers(driversRes.data.data);
+        setVehicles(vehiclesRes.data.data);
+      } catch (err) {
+        console.error('Polling failed to update trip details', err);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [id]);
 
   // Auto-sync checklist with form state
   useEffect(() => {
