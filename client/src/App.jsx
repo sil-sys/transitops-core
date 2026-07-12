@@ -9,6 +9,8 @@ import Vehicles from './pages/Vehicles';
 import Drivers from './pages/Drivers';
 import Trips from './pages/Trips';
 import TripDetails from './pages/TripDetails';
+import FuelLogs from './pages/FuelLogs';
+import Expenses from './pages/Expenses';
 import ComingSoon from './pages/ComingSoon';
 import api from './api/axios';
 
@@ -196,7 +198,7 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['FleetManager', 'FinancialAnalyst']}>
               <Layout>
-                <ComingSoon />
+                <FuelLogs />
               </Layout>
             </ProtectedRoute>
           }
@@ -206,7 +208,7 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['FleetManager', 'FinancialAnalyst']}>
               <Layout>
-                <ComingSoon />
+                <Expenses />
               </Layout>
             </ProtectedRoute>
           }
