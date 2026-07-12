@@ -60,6 +60,16 @@ const getTrip = async (req, res, next) => {
 // @access Private (FleetManager only)
 const createTrip = async (req, res, next) => {
   try {
+    const { vehicle: vehicleId, cargoWeight } = req.body;
+
+    // Cargo weight validation on create (if a vehicle is already selected)
+    if (vehicleId && cargoWeight > 0) {
+      const vehicleDoc = await Vehicle.findById(vehicleId);
+      if (vehicleDoc && cargoWeight > vehicleDoc.maxLoadCapacity) {
+        return next(new ApiError(400, `Cargo weight (${cargoWeight} kg) exceeds the selected vehicle's maximum load capacity (${vehicleDoc.maxLoadCapacity} kg).`));
+      }
+    }
+
     const tripData = {
       ...req.body,
       status: 'Draft',
@@ -99,6 +109,16 @@ const updateTrip = async (req, res, next) => {
 
     const incomingStatus = req.body.status;
     const currentStatus = trip.status;
+
+    // Cargo weight validation on every save/update if a vehicle is assigned
+    const vehicleIdForValidation = req.body.vehicle || trip.vehicle;
+    const cargoWeightForValidation = req.body.cargoWeight ?? trip.cargoWeight;
+    if (vehicleIdForValidation && cargoWeightForValidation > 0) {
+      const vehicleDoc = await Vehicle.findById(vehicleIdForValidation);
+      if (vehicleDoc && cargoWeightForValidation > vehicleDoc.maxLoadCapacity) {
+        return next(new ApiError(400, `Cargo weight (${cargoWeightForValidation} kg) exceeds the selected vehicle's maximum load capacity (${vehicleDoc.maxLoadCapacity} kg).`));
+      }
+    }
 
     // Enforce status transition validation
     if (incomingStatus && incomingStatus !== currentStatus) {
