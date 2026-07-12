@@ -260,6 +260,10 @@ export default function TripDetails() {
   const selectedDriverObj = getDriverById(selectedDriver);
   const selectedVehicleObj = getVehicleById(selectedVehicle);
 
+  // Cargo weight validation
+  const selectedVehicleMaxCapacity = selectedVehicleObj?.maxLoadCapacity ?? null;
+  const cargoOverLimit = selectedVehicleMaxCapacity !== null && cargoForm.cargoWeight > 0 && cargoForm.cargoWeight > selectedVehicleMaxCapacity;
+
   return (
     <div className="bg-slate-50 min-h-screen">
       {/* Toast: Success */}
@@ -624,7 +628,7 @@ export default function TripDetails() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {[
                   { label: 'Cargo Type', field: 'cargoType', type: 'text', placeholder: 'e.g. Perishables' },
-                  { label: 'Weight (kg)', field: 'cargoWeight', type: 'number', placeholder: '0' },
+                  { label: `Weight (kg)${selectedVehicleMaxCapacity ? ` — Max: ${selectedVehicleMaxCapacity} kg` : ''}`, field: 'cargoWeight', type: 'number', placeholder: '0' },
                   { label: 'Volume (m³)', field: 'volume', type: 'number', placeholder: '0' },
                   { label: 'Packages', field: 'packages', type: 'number', placeholder: '0' },
                 ].map(({ label, field, type, placeholder }) => (
@@ -649,6 +653,15 @@ export default function TripDetails() {
                   />
                 </div>
               </div>
+              {/* Cargo overweight warning */}
+              {cargoOverLimit && (
+                <div className="mt-3 flex items-start gap-2.5 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
+                  <svg className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                  <p className="text-xs font-semibold text-rose-700">
+                    Cargo weight ({cargoForm.cargoWeight} kg) exceeds the selected vehicle's maximum load capacity ({selectedVehicleMaxCapacity} kg). Reduce the cargo weight or select a different vehicle.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Section 5: Documents */}
@@ -818,8 +831,11 @@ export default function TripDetails() {
                   {['Draft', 'Vehicle Assigned', 'Driver Assigned', 'Route Planned'].includes(trip.status) && (
                     <button
                       onClick={() => handleTransition('Ready for Dispatch')}
-                      disabled={saving}
-                      className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-semibold transition shadow-sm"
+                      disabled={saving || cargoOverLimit}
+                      title={cargoOverLimit ? 'Cargo weight exceeds vehicle capacity' : ''}
+                      className={`w-full py-2.5 text-white rounded-xl text-sm font-semibold transition shadow-sm ${
+                        cargoOverLimit ? 'bg-teal-300 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700'
+                      }`}
                     >
                       Mark Ready for Dispatch
                     </button>
@@ -836,8 +852,11 @@ export default function TripDetails() {
                         iconBg: 'bg-blue-100',
                         icon: <svg className="w-7 h-7 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>,
                       })}
-                      disabled={saving}
-                      className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition shadow-md"
+                      disabled={saving || cargoOverLimit}
+                      title={cargoOverLimit ? 'Cargo weight exceeds vehicle capacity' : ''}
+                      className={`w-full py-2.5 text-white rounded-xl text-sm font-bold transition shadow-md ${
+                        cargoOverLimit ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                      }`}
                     >
                       ⚡ Dispatch Trip
                     </button>
