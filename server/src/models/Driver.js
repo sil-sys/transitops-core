@@ -34,6 +34,11 @@ const driverSchema = new mongoose.Schema(
       min: [0, 'Safety score cannot be negative'],
       max: [100, 'Safety score cannot exceed 100'],
     },
+    experience: {
+      type: Number,
+      default: 2,
+      min: [0, 'Experience cannot be negative'],
+    },
     status: {
       type: String,
       enum: ['Available', 'On Trip', 'Off Duty', 'Suspended'],
